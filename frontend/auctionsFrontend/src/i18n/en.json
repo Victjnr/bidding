@@ -1,0 +1,137 @@
+{
+  "app": {
+    "name": "Upload Auctions",
+    "tagline": "Real-Time Auctions",
+    "description": "The modern auction and bidding platform"
+  },
+  "nav": {
+    "browse": "Browse Auctions",
+    "myBids": "My Bids",
+    "watchlist": "Watchlist",
+    "sell": "Sell",
+    "myAccount": "My Account",
+    "messages": "Messages",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "logout": "Log Out",
+    "admin": "Admin Panel",
+    "adminDashboard": "Dashboard",
+    "adminUsers": "Users",
+    "adminAuctions": "Auctions",
+    "adminSettings": "Settings",
+    "sellerDashboard": "Seller Dashboard",
+    "sellerAnalytics": "Analytics",
+    "sellerListings": "My Listings"
+  },
+  "auth": {
+    "login": "Log In",
+    "register": "Create Account",
+    "email": "Email address",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "name": "Full Name",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "twoFactorTitle": "Two-Factor Authentication",
+    "twoFactorCode": "Enter your 2FA code",
+    "verifyEmail": "Verify Your Email",
+    "resendVerification": "Resend verification email"
+  },
+  "auction": {
+    "startingPrice": "Starting Price",
+    "currentPrice": "Current Price",
+    "reservePrice": "Reserve Price",
+    "buyNowPrice": "Buy It Now",
+    "bidIncrement": "Minimum Increment",
+    "timeRemaining": "Time Remaining",
+    "totalBids": "{{count}} bids",
+    "watchers": "{{count}} watchers",
+    "placeBid": "Place Bid",
+    "bidNow": "Bid Now",
+    "buyNow": "Buy Now",
+    "watching": "Watching",
+    "addToWatchlist": "Add to Watchlist",
+    "reserveMet": "Reserve Met",
+    "reserveNotMet": "Reserve Not Met",
+    "auctionEnded": "Auction Ended",
+    "youWon": "You Won!",
+    "status": {
+      "draft": "Draft",
+      "pending_review": "Pending Review",
+      "scheduled": "Scheduled",
+      "live": "Live",
+      "ended": "Ended",
+      "sold": "Sold",
+      "cancelled": "Cancelled",
+      "unsold": "Unsold"
+    },
+    "type": {
+      "english": "English Auction",
+      "dutch": "Dutch Auction",
+      "sealed": "Sealed Bid",
+      "buy_now": "Buy Now"
+    }
+  },
+  "bid": {
+    "yourBid": "Your Bid",
+    "maxBid": "Maximum Bid",
+    "proxyBid": "Proxy Bid",
+    "autoBid": "Auto Bid",
+    "bidPlaced": "Bid placed successfully!",
+    "outbid": "You've been outbid!",
+    "winning": "You're winning!",
+    "bidHistory": "Bid History",
+    "noBids": "No bids yet. Be the first!"
+  },
+  "payment": {
+    "checkout": "Checkout",
+    "wallet": "Wallet",
+    "balance": "Balance",
+    "payouts": "Payouts",
+    "payNow": "Pay Now",
+    "addFunds": "Add Funds"
+  },
+  "search": {
+    "placeholder": "Search auctions...",
+    "filters": "Filters",
+    "sortBy": "Sort By",
+    "noResults": "No auctions found",
+    "endingSoon": "Ending Soon",
+    "newlyListed": "Newly Listed",
+    "priceLow": "Price: Low to High",
+    "priceHigh": "Price: High to Low",
+    "mostBids": "Most Bids"
+  },
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "submit": "Submit",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "viewAll": "View All",
+    "noData": "No data available",
+    "error": "Something went wrong",
+    "retry": "Try again",
+    "success": "Success"
+  },
+  "empty": {
+    "auctions": "No auctions to show",
+    "bids": "You haven't placed any bids yet",
+    "watchlist": "Your watchlist is empty",
+    "messages": "No messages yet",
+    "notifications": "You're all caught up!"
+  },
+  "time": {
+    "days": "{{count}}d",
+    "hours": "{{count}}h",
+    "minutes": "{{count}}m",
+    "seconds": "{{count}}s",
+    "ended": "Ended"
+  }
+}

@@ -1,0 +1,23 @@
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UserFilterRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'role' => 'sometimes|string',
+            'status' => 'sometimes|string',
+            'search' => 'sometimes|string',
+            'per_page' => 'sometimes|integer|min:1|max:100',
+        ];
+    }
+}

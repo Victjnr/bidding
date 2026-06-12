@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<ruleset name="Laravel PSR-12 Standard">
+    <description>PSR-12 coding standard for Upload Auctions</description>
+
+    <!-- Paths to check -->
+    <file>app</file>
+    <file>routes</file>
+    <file>database</file>
+
+    <!-- Exclude standard Laravel folders -->
+    <exclude-pattern>bootstrap/</exclude-pattern>
+    <exclude-pattern>storage/</exclude-pattern>
+    <exclude-pattern>vendor/</exclude-pattern>
+
+    <!-- Use PSR-12 as a base -->
+    <rule ref="PSR12"/>
+
+    <!-- Additional tweaks for Laravel -->
+    <rule ref="Generic.PHP.RequireStrictTypes"/>
+    <rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
+
+    <!-- Ignore missing namespace for migrations -->
+    <rule ref="PSR1.Classes.ClassDeclaration.MissingNamespace">
+        <exclude-pattern>database/migrations/*</exclude-pattern>
+    </rule>
+</ruleset>

@@ -1,0 +1,16 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 9
+    paths:
+        - app
+    
+    ignoreErrors:
+        # Ignore some standard Laravel dynamic property errors if they get noisy
+        # - '#Access to an undefined property .*#'
+
+    excludePaths:
+        - ./*/*/FileToBeExcluded.php
+
+    checkMissingIterableValueType: false

@@ -1,0 +1,41 @@
+name: Security & QA
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  security-and-qa:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.3'
+        
+    - name: Install Dependencies
+      run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+      
+    - name: Composer Audit (CVEs)
+      run: composer audit
+      
+    - name: Run PHP CodeSniffer (PSR-12)
+      run: ./vendor/bin/phpcs
+      
+    - name: Run Larastan (Type Errors)
+      run: ./vendor/bin/phpstan analyse
+      
+    - name: Run Tests & Coverage
+      run: php artisan test --coverage --min=80
+      
+    # - name: Docker Image Scan
+    #   uses: snyk/actions/docker@master
+    #   env:
+    #     SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    #   with:
+    #     image: your-dockerhub/auctions-app:latest

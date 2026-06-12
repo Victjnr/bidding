@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════
+   Upload Auctions Design Tokens
+   ═══════════════════════════════════════════════════ */
+:root {
+  /* Brand Colours */
+  --color-navy:    #0D2137;
+  --color-orange:  #E8540A;
+  --color-steel:   #1E3A5F;
+  --color-sky:     #EBF4FD;
+  --color-border:  #BFD0E4;
+  --color-ink:     #111827;
+  --color-muted:   #6B7A8D;
+  --color-success: #16A34A;
+  --color-error:   #DC2626;
+  --color-warning: #D97706;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  /* Shadows */
+  --shadow-card: 0 2px 12px rgba(13, 33, 55, 0.10);
+  --shadow-elevated: 0 8px 32px rgba(13, 33, 55, 0.18);
+
+  /* Sidebar */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 72px;
+
+  /* Topbar */
+  --topbar-height: 64px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Base Layer Overrides
+   ═══════════════════════════════════════════════════ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-sky text-ink font-body;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-semibold tracking-tight;
+  }
+
+  /* Focus ring — brand orange */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-orange;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Component Layer
+   ═══════════════════════════════════════════════════ */
+@layer components {
+  /* Card */
+  .card {
+    @apply rounded-md bg-white shadow-card border border-border;
+  }
+
+  .card-header {
+    @apply px-5 py-4 border-b border-border;
+  }
+
+  .card-body {
+    @apply px-5 py-4;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-medium;
+  }
+
+  .badge-orange {
+    @apply bg-orange/10 text-orange;
+  }
+
+  .badge-success {
+    @apply bg-success/10 text-success;
+  }
+
+  .badge-error {
+    @apply bg-error/10 text-error;
+  }
+
+  .badge-warning {
+    @apply bg-warning/10 text-warning;
+  }
+
+  .badge-navy {
+    @apply bg-navy/10 text-navy;
+  }
+
+  /* Button base */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5
+           text-sm font-medium transition-all duration-200
+           focus-visible:outline-2 focus-visible:outline-offset-2
+           disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-orange text-white hover:bg-orange-dark
+           focus-visible:outline-orange active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply btn bg-navy text-white hover:bg-navy-light
+           focus-visible:outline-navy active:scale-[0.98];
+  }
+
+  .btn-outline {
+    @apply btn border border-border bg-white text-ink
+           hover:bg-sky focus-visible:outline-orange active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-muted hover:bg-sky hover:text-ink
+           focus-visible:outline-orange;
+  }
+
+  /* Input */
+  .input {
+    @apply w-full rounded-md border border-border bg-white px-3.5 py-2.5
+           text-sm text-ink placeholder:text-muted
+           focus:outline-none focus:ring-2 focus:ring-orange/30 focus:border-orange
+           transition-colors duration-200;
+  }
+
+  /* Skeleton loading */
+  .skeleton {
+    @apply bg-border/50 rounded-md animate-pulse;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Utility Layer
+   ═══════════════════════════════════════════════════ */
+@layer utilities {
+  .text-gradient-orange {
+    @apply bg-gradient-to-r from-orange to-orange-light bg-clip-text text-transparent;
+  }
+
+  .text-gradient-navy {
+    @apply bg-gradient-to-r from-navy to-navy-light bg-clip-text text-transparent;
+  }
+
+  .glass-navy {
+    background: rgba(13, 33, 55, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 3px;
+  }
+}
