@@ -23,8 +23,7 @@ class MessageService implements IMessageService
         $clean = Str::limit($clean, 500, ''); // Max 500 chars
 
         // Flag if contains URLs, phone numbers, or email addresses
-        // Regex looks for http/s, min 7 digits, or standard email format
-        $isFlagged = (bool) preg_match("/(https?:\/\/|\b\d{7,}\b|[a-z0-9+_.-\]+@[a-z.-]+)/i", $clean);
+        $isFlagged = (bool) preg_match('/(https?:\/\/|\b\d{7,}\b|[a-z0-9+_.\-]+@[a-z.\-]+)/i', $clean);
 
         $message = $this->messageRepository->create([
             'conversation_id' => $conversation->id,

@@ -6,7 +6,7 @@ use App\Contracts\Admin\IAuditService;
 use App\Contracts\Admin\ISettingsService;
 use App\Models\PlatformSetting;
 use App\Models\User;
-use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Cache;
 
 class SettingsService implements ISettingsService
 {
@@ -16,7 +16,7 @@ class SettingsService implements ISettingsService
 
     public function get(string $key, mixed $default = null): mixed
     {
-        return Redis::remember("setting:{$key}", 600, function () use ($key, $default) {
+        return Cache::remember("setting:{$key}", 600, function () use ($key, $default) {
             $setting = PlatformSetting::where('key', $key)->first();
             return $setting ? $setting->value : $default;
         });
@@ -31,7 +31,7 @@ class SettingsService implements ISettingsService
             ['value' => $value]
         );
 
-        Redis::del("setting:{$key}");
+        Cache::forget("setting:{$key}");
 
         $this->auditService->log("setting.updated", null, [
             'old' => ['key' => $key, 'value' => $oldValue],

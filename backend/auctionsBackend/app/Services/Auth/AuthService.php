@@ -15,10 +15,11 @@ use App\Events\Auth\UserLoggedOut;
 use App\Events\Auth\UserRegistered;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
+use Spatie\Permission\Models\Role;
 
 class AuthService implements IAuthService
 {
@@ -39,6 +40,7 @@ class AuthService implements IAuthService
             'status' => UserStatus::Active->value,
         ]);
 
+        Role::firstOrCreate(['name' => 'buyer', 'guard_name' => 'web']);
         $user->assignRole('buyer');
 
         event(new UserRegistered($user));
@@ -49,7 +51,7 @@ class AuthService implements IAuthService
     public function login(LoginDTO $dto): TokenDTO
     {
         $lockKey = "lockout:{$dto->ipAddress}";
-        if (Redis::exists($lockKey)) {
+        if (Cache::has($lockKey)) {
             abort(429, 'Account locked due to too many failed attempts.');
         }
 
@@ -61,8 +63,16 @@ class AuthService implements IAuthService
         }
 
         if ($user->two_factor_enabled) {
-            Redis::setex("pending_2fa:{$user->uuid}", 300, 1);
-            return new TokenDTO(null, null, null, 'Bearer', true);
+            if (!empty($dto->twoFactorCode)) {
+                $secret = $this->resolveTwoFactorSecret($user);
+                if (!$this->google2FA->verifyKey($secret, $dto->twoFactorCode)) {
+                    abort(401, 'Invalid 2FA code.');
+                }
+                Cache::forget("pending_2fa:{$user->uuid}");
+            } else {
+                Cache::put("pending_2fa:{$user->uuid}", 1, 300);
+                return new TokenDTO(null, null, null, 'Bearer', true);
+            }
         }
 
         $this->resetFailedLogin($dto->ipAddress);
@@ -74,36 +84,33 @@ class AuthService implements IAuthService
     public function verifyTwoFactor(string $userId, string $code): TokenDTO
     {
         $pendingKey = "pending_2fa:{$userId}";
-        if (!Redis::exists($pendingKey)) {
-            abort(401, '2FA session expired or invalid.');
-        }
-
         $user = $this->userRepository->findByUuid($userId);
         if (!$user) {
             abort(404, 'User not found.');
         }
 
-        $isValid = $this->google2FA->verifyKey(decrypt($user->two_factor_secret), $code);
+        $secret = $this->resolveTwoFactorSecret($user);
+        $isValid = $this->google2FA->verifyKey($secret, $code);
 
         if (!$isValid) {
             abort(401, 'Invalid 2FA code.');
         }
 
-        Redis::del($pendingKey);
+        Cache::forget($pendingKey);
         return $this->issueTokens($user);
     }
 
     public function refreshToken(string $refreshToken): TokenDTO
     {
         $jti = explode('|', $refreshToken)[0] ?? null;
-        if (!$jti || !Redis::exists("refresh:{$jti}")) {
+        if (!$jti || !Cache::has("refresh:{$jti}")) {
             abort(401, 'Invalid or expired refresh token.');
         }
 
-        $userId = Redis::get("refresh:{$jti}");
+        $userId = Cache::get("refresh:{$jti}");
         $user = $this->userRepository->findByUuid($userId);
 
-        Redis::del("refresh:{$jti}");
+        Cache::forget("refresh:{$jti}");
 
         if (!$user) {
             abort(401, 'User no longer exists.');
@@ -122,12 +129,13 @@ class AuthService implements IAuthService
     {
         $secret = $this->google2FA->generateSecretKey();
         
+        // User model casts 'two_factor_secret' => 'encrypted', so assign plaintext directly
         $this->userRepository->update($user, [
-            'two_factor_secret' => encrypt($secret)
+            'two_factor_secret' => $secret
         ]);
 
         $qrUrl = $this->google2FA->getQRCodeUrl(
-            config('app.name'),
+            config('app.name', 'Upload Auctions'),
             $user->email,
             $secret
         );
@@ -140,13 +148,16 @@ class AuthService implements IAuthService
         return [
             'secret' => $secret,
             'qr_url' => $qrUrl,
+            'qrCodeUrl' => $qrUrl,
             'backup_codes' => $backupCodes,
+            'recoveryCodes' => $backupCodes,
         ];
     }
 
     public function confirmTwoFactor(User $user, string $code): void
     {
-        $isValid = $this->google2FA->verifyKey(decrypt($user->two_factor_secret), $code);
+        $secret = $this->resolveTwoFactorSecret($user);
+        $isValid = $this->google2FA->verifyKey($secret, $code);
 
         if (!$isValid) {
             abort(400, 'Invalid 2FA code.');
@@ -159,6 +170,19 @@ class AuthService implements IAuthService
         event(new TwoFactorEnabled($user));
     }
 
+    protected function resolveTwoFactorSecret(User $user): string
+    {
+        $raw = $user->two_factor_secret;
+        if (!$raw) {
+            return '';
+        }
+        try {
+            return decrypt($raw);
+        } catch (\Throwable) {
+            return (string) $raw;
+        }
+    }
+
     protected function issueTokens(User $user): TokenDTO
     {
         $ttlMinutes = config('security.token_ttl', 15);
@@ -168,7 +192,7 @@ class AuthService implements IAuthService
         $refreshToken = "{$jti}|" . Str::random(40);
         
         $refreshTtlDays = config('security.refresh_token_ttl', 7);
-        Redis::setex("refresh:{$jti}", $refreshTtlDays * 86400, $user->uuid);
+        Cache::put("refresh:{$jti}", $user->uuid, $refreshTtlDays * 86400);
 
         return new TokenDTO(
             accessToken: $token->plainTextToken,
@@ -180,11 +204,11 @@ class AuthService implements IAuthService
     protected function handleFailedLogin(string $ip, ?User $user): void
     {
         $key = "failed:{$ip}";
-        $attempts = Redis::incr($key);
-        Redis::expire($key, 900);
+        $attempts = (int) Cache::get($key, 0) + 1;
+        Cache::put($key, $attempts, 900);
 
         if ($attempts >= config('security.lockout.max_attempts', 5)) {
-            Redis::setex("lockout:{$ip}", config('security.lockout.decay_minutes', 15) * 60, 1);
+            Cache::put("lockout:{$ip}", 1, config('security.lockout.decay_minutes', 15) * 60);
         }
 
         if ($user) {
@@ -194,6 +218,6 @@ class AuthService implements IAuthService
 
     protected function resetFailedLogin(string $ip): void
     {
-        Redis::del("failed:{$ip}");
+        Cache::forget("failed:{$ip}");
     }
 }

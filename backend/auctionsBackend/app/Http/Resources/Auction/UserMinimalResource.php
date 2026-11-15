@@ -9,12 +9,20 @@ class UserMinimalResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $displayName = $this->display_name ?: trim("{$this->first_name} {$this->last_name}") ?: 'User';
+        $avatar = $this->avatar_path ?? $this->avatar_url ?? null;
+
         return [
+            'id' => $this->id,
             'uuid' => $this->uuid,
-            'display_name' => $this->display_name,
-            'avatar_url' => $this->avatar_url,
+            'displayName' => $displayName,
+            'display_name' => $displayName,
+            'avatarPath' => $avatar,
+            'avatar_url' => $avatar,
+            'kycTier' => method_exists($this->resource, 'getNumericKycTier') ? $this->resource->getNumericKycTier() : 0,
             'kyc_tier' => $this->kyc_tier,
-            'trust_score' => $this->trust_score,
+            'trustScore' => (int) ($this->trust_score ?? 100),
+            'trust_score' => (int) ($this->trust_score ?? 100),
         ];
     }
 }

@@ -9,15 +9,15 @@ use App\Enums\TransactionStatus;
 use App\Models\Auction;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Redis;
 use Carbon\Carbon;
 
 class SellerAnalyticsService implements ISellerAnalyticsService
 {
     public function getDashboardStats(User $seller): SellerStatsDTO
     {
-        return Redis::remember("seller:stats:{$seller->id}", 300, function () use ($seller) {
+        return Cache::remember("seller:stats:{$seller->id}", 300, function () use ($seller) {
             
             // Read replica usage via ->on('mysql_read') or DB::connection('mysql_read')
             // Using ->on() for Eloquent, assuming the connection 'mysql_read' is defined in config/database.php

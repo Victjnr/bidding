@@ -11,11 +11,19 @@ class SuspendRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'days' => $this->input('days') ?? $this->input('durationDays') ?? 7,
+            'reason' => $this->input('reason') ?: 'Suspended by administrator',
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'reason' => 'required|string|max:255',
-            'days' => 'required|integer|min:1|max:365',
+            'reason' => 'nullable|string|max:255',
+            'days' => 'nullable|integer|min:1|max:365',
         ];
     }
 }

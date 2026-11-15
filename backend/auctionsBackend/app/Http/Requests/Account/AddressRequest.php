@@ -11,17 +11,28 @@ class AddressRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'type' => $this->input('type') ?? 'shipping',
+            'line1' => $this->input('line1') ?? $this->input('address_line_1') ?? $this->input('addressLine1'),
+            'line2' => $this->input('line2') ?? $this->input('address_line_2') ?? $this->input('addressLine2'),
+            'postalCode' => $this->input('postalCode') ?? $this->input('postal_code'),
+            'isDefault' => $this->boolean('isDefault', $this->boolean('is_primary', false)),
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'label' => 'required|string|max:50',
-            'line_1' => 'required|string|max:255',
-            'line_2' => 'nullable|string|max:255',
+            'type' => 'required|string|in:shipping,billing',
+            'line1' => 'required|string|max:255',
+            'line2' => 'nullable|string|max:255',
             'city' => 'required|string|max:100',
             'state' => 'nullable|string|max:100',
-            'postal_code' => 'required|string|max:20',
-            'country' => 'required|string|size:2', // ISO 3166-1 alpha-2
-            'is_default' => 'sometimes|boolean',
+            'postalCode' => 'required|string|max:20',
+            'country' => 'required|string|max:100',
+            'isDefault' => 'sometimes|boolean',
         ];
     }
 }

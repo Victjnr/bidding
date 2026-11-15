@@ -19,21 +19,25 @@ class StatsController extends Controller
     public function landing(): JsonResponse
     {
         $activeAuctions = Auction::where('status', 'active')->count();
-        $registeredBidders = User::role('bidder')->count();
-        
-        // Ensure registered bidders falls back to user count if role doesn't exist or isn't assigned yet
+        try {
+            $registeredBidders = User::role('bidder')->count();
+        } catch (\Throwable) {
+            $registeredBidders = 0;
+        }
+
         if ($registeredBidders === 0) {
             $registeredBidders = User::count();
         }
 
-        $bidsToday = Bid::whereDate('created_at', Carbon::today())->sum('amount');
+        $bidsToday = (float) Bid::whereDate('created_at', Carbon::today())->sum('amount');
 
-        return response()->json([
-            'data' => [
-                'active_auctions' => $activeAuctions,
-                'registered_bidders' => $registeredBidders,
-                'bids_today' => $bidsToday ?: 0,
-            ]
+        return \App\Helpers\ApiResponse::success([
+            'active_auctions' => $activeAuctions,
+            'activeAuctions' => $activeAuctions,
+            'registered_bidders' => $registeredBidders,
+            'registeredBidders' => $registeredBidders,
+            'bids_today' => $bidsToday ?: 0,
+            'bidsToday' => $bidsToday ?: 0,
         ]);
     }
 }

@@ -21,13 +21,18 @@ class SanitiseInputMiddleware
     protected function getPurifier(): HTMLPurifier
     {
         if ($this->purifier === null) {
+            $cachePath = storage_path('app/purifier');
+            if (!is_dir($cachePath)) {
+                @mkdir($cachePath, 0755, true);
+            }
+
             $config = HTMLPurifier_Config::createDefault();
             $config->set('HTML.Allowed', 'p,br,strong,em,ul,ol,li,h3,h4,blockquote,a[href]');
             $config->set('HTML.ForbiddenElements', ['script', 'iframe', 'form', 'input', 'object', 'style']);
             $config->set('HTML.ForbiddenAttributes', ['on*']);
             $config->set('Attr.AllowedFrameTargets', ['_blank']);
             $config->set('URI.AllowedSchemes', ['http' => true, 'https' => true]);
-            $config->set('Cache.SerializerPath', storage_path('app/purifier'));
+            $config->set('Cache.SerializerPath', $cachePath);
 
             $this->purifier = new HTMLPurifier($config);
         }

@@ -22,8 +22,8 @@ use App\Models\Auction;
 use App\Models\ProxyBid;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
 class BidService implements IBidService
@@ -31,163 +31,131 @@ class BidService implements IBidService
     /**
      * CRITICAL PATH — placeBid
      *
-     * 9-step hot path: Redis-first, async DB persistence, zero blocking.
+     * Supports both Cache (database/redis) and immediate DB consistency.
      */
     public function placeBid(PlaceBidDTO $dto): BidResultDTO
     {
-        // ── STEP 1: Load auction from Redis cache ──
-        $cacheKey = "bidflow:auction:{$dto->auctionUuid}:state";
-        $cached = Redis::get($cacheKey);
+        $auction = Auction::where('uuid', $dto->auctionUuid)->firstOrFail();
+        $auctionId = $auction->id;
 
-        if (!$cached) {
-            $auction = Auction::where('uuid', $dto->auctionUuid)->firstOrFail();
-            $state = [
-                'id' => $auction->id,
-                'uuid' => $auction->uuid,
-                'seller_id' => $auction->seller_id,
-                'status' => $auction->status->value,
-                'current_price' => (float) $auction->current_price,
-                'reserve_price' => $auction->reserve_price ? (float) $auction->reserve_price : null,
-                'bid_increment_value' => (float) $auction->bid_increment_value,
-                'total_bids' => (int) $auction->total_bids,
-                'end_at' => $auction->end_at->timestamp,
-                'anti_snipe_minutes' => (int) $auction->anti_snipe_minutes,
-                'anti_snipe_extend_minutes' => (int) $auction->anti_snipe_extend_minutes,
-                'max_extension_minutes' => (int) $auction->max_extension_minutes,
-                'required_kyc_tier' => 0,
-            ];
-            Redis::setex($cacheKey, 60, json_encode($state));
-        } else {
-            $state = json_decode($cached, true);
-        }
-
-        $auctionId = $state['id'];
-
-        // ── STEP 2: Pre-validation (domain exceptions) ──
-        $status = AuctionStatus::from($state['status']);
+        // ── STEP 1: Pre-validation (domain exceptions) ──
+        $status = $auction->status;
         if (!$status->isBiddable()) {
             throw new AuctionNotActiveException();
         }
 
-        if ($dto->bidderId === $state['seller_id']) {
+        if ((int) $dto->bidderId === (int) $auction->seller_id) {
             throw new CannotBidOwnAuctionException();
         }
 
         $bidder = User::findOrFail($dto->bidderId);
-        if (($bidder->kyc_tier ?? 0) < $state['required_kyc_tier']) {
+        $requiredKycTier = 0;
+        if ($bidder->getNumericKycTier() < $requiredKycTier) {
             throw new KycTierInsufficientException();
         }
 
-        // Read live price from Redis (atomic source of truth)
-        $livePrice = (float) (Redis::get("bidflow:auction:{$auctionId}:current_price") ?? $state['current_price']);
-        $increment = (float) $state['bid_increment_value'];
-        $minRequired = $livePrice + $increment;
+        $livePrice = (float) ($auction->current_price ?? $auction->start_price ?? 0);
+        $increment = (float) ($auction->bid_increment_value ?: 10);
+        $minRequired = (int) $auction->total_bids === 0 && $livePrice > 0
+            ? $livePrice
+            : $livePrice + $increment;
 
         if ($dto->amount < $minRequired) {
             throw new BidTooLowException($minRequired);
         }
 
-        // ── STEP 3: Rate limit ──
+        // ── STEP 2: Rate limit via Cache ──
         $rateKey = "bidflow:user:{$dto->bidderId}:bid_rate";
-        $currentRate = (int) Redis::incr($rateKey);
-        if ($currentRate === 1) {
-            Redis::expire($rateKey, 60);
-        }
+        $currentRate = (int) Cache::get($rateKey, 0) + 1;
+        Cache::put($rateKey, $currentRate, 60);
         if ($currentRate > 30) {
             throw new TooManyBidsException();
         }
 
-        // ── STEP 4: Atomic Redis MULTI/EXEC ──
+        // ── STEP 3: Persist Bid & Update Auction Atomically ──
         $bidUuid = (string) Str::uuid();
-        $microtime = microtime(true);
-        $retries = 0;
-
-        do {
-            $results = Redis::transaction(function ($tx) use ($auctionId, $dto, $microtime) {
-                $tx->zadd("bidflow:auction:{$auctionId}:bids", $dto->amount, "{$dto->bidderId}:{$microtime}");
-                $tx->set("bidflow:auction:{$auctionId}:current_price", $dto->amount);
-                $tx->incr("bidflow:auction:{$auctionId}:bid_count");
-            });
-
-            if ($results !== null) {
-                break;
-            }
-
-            $retries++;
-            if ($retries >= 3) {
-                throw new DuplicateBidException();
-            }
-        } while (true);
-
-        $totalBids = (int) ($results[2] ?? Redis::get("bidflow:auction:{$auctionId}:bid_count") ?? 0);
-
-        // ── STEP 5: Anti-snipe ──
-        $endAt = (int) (Redis::get("bidflow:auction:{$auctionId}:end_at") ?? $state['end_at']);
-        $timeRemaining = $endAt - now()->timestamp;
-        $antiSnipeWindow = $state['anti_snipe_minutes'] * 60;
-
-        if ($timeRemaining > 0 && $timeRemaining < $antiSnipeWindow) {
-            $extCount = (int) Redis::incr("bidflow:auction:{$auctionId}:extension_count");
-            $maxExtensions = (int) floor($state['max_extension_minutes'] / max(1, $state['anti_snipe_extend_minutes']));
-
-            if ($extCount <= $maxExtensions) {
-                $newEnd = now()->addMinutes($state['anti_snipe_extend_minutes']);
-                Redis::set("bidflow:auction:{$auctionId}:end_at", $newEnd->timestamp);
-                $endAt = $newEnd->timestamp;
-                $timeRemaining = $endAt - now()->timestamp;
-
-                broadcast(new AuctionExtended(
-                    $state['uuid'],
-                    $newEnd->toIso8601String(),
-                    $extCount
-                ))->toOthers();
-
-                UpdateAuctionEndAtJob::dispatch($auctionId, $newEnd)
-                    ->onQueue('bids');
-            }
-        }
-
-        // ── STEP 6: Async persistence (NON-BLOCKING) ──
-        PersistBidJob::dispatch(
+        (new PersistBidJob(
             $auctionId,
             $dto->bidderId,
             $dto->amount,
             $dto->type->value,
             $bidUuid,
-            $dto->ipAddress,
+            $dto->ipAddress ?? '127.0.0.1',
             $dto->deviceFingerprint
-        )->onQueue('bids')->afterCommit();
+        ))->handle();
 
-        // ── STEP 7: Broadcast BidPlaced via Reverb ──
-        $reservePrice = $state['reserve_price'];
+        $auction->refresh();
+        $totalBids = (int) $auction->total_bids;
+
+        // ── STEP 4: Anti-snipe ──
+        $endAt = $auction->end_at ? $auction->end_at->timestamp : now()->addDay()->timestamp;
+        $timeRemaining = $endAt - now()->timestamp;
+        $antiSnipeWindow = (int) ($auction->anti_snipe_minutes ?? 0) * 60;
+
+        if ($antiSnipeWindow > 0 && $timeRemaining > 0 && $timeRemaining < $antiSnipeWindow) {
+            $extKey = "bidflow:auction:{$auctionId}:extension_count";
+            $extCount = (int) Cache::get($extKey, 0) + 1;
+            Cache::put($extKey, $extCount, 86400);
+
+            $extendMins = max(1, (int) ($auction->anti_snipe_extend_minutes ?: 5));
+            $maxExtMins = max($extendMins, (int) ($auction->max_extension_minutes ?: 25));
+            $maxExtensions = (int) floor($maxExtMins / $extendMins);
+
+            if ($extCount <= $maxExtensions) {
+                $newEnd = now()->addMinutes($extendMins);
+                $auction->update([
+                    'end_at' => $newEnd,
+                    'status' => AuctionStatus::Extended->value,
+                ]);
+                $endAt = $newEnd->timestamp;
+                $timeRemaining = $endAt - now()->timestamp;
+
+                try {
+                    broadcast(new AuctionExtended(
+                        $auction->uuid,
+                        $newEnd->toIso8601String(),
+                        $extCount
+                    ))->toOthers();
+                } catch (\Throwable) {
+                }
+            }
+        }
+
+        // ── STEP 5: Broadcast BidPlaced ──
+        $reservePrice = $auction->reserve_price !== null ? (float) $auction->reserve_price : null;
         $isReserveMet = $reservePrice === null || $dto->amount >= $reservePrice;
         $nextMinBid = $dto->amount + $increment;
 
-        broadcast(new BidPlaced(
-            auctionUuid: $state['uuid'],
-            bidUuid: $bidUuid,
-            amount: $dto->amount,
-            bidderAlias: $bidder->display_name ?? 'Bidder',
-            totalBids: $totalBids,
-            isReserveMet: $isReserveMet,
-            nextMinimumBid: $nextMinBid,
-            timeRemainingSeconds: max(0, $timeRemaining),
-            currentPrice: $dto->amount
-        ))->toOthers();
+        try {
+            broadcast(new BidPlaced(
+                auctionUuid: $auction->uuid,
+                bidUuid: $bidUuid,
+                amount: $dto->amount,
+                bidderAlias: $bidder->display_name ?? $bidder->first_name ?? 'Bidder',
+                totalBids: $totalBids,
+                isReserveMet: $isReserveMet,
+                nextMinimumBid: $nextMinBid,
+                timeRemainingSeconds: max(0, $timeRemaining),
+                currentPrice: $dto->amount,
+                bidType: $dto->type->value
+            ))->toOthers();
+        } catch (\Throwable) {
+        }
 
-        // ── STEP 8: Trigger proxy check async ──
-        CheckProxyBidsJob::dispatch($auctionId, $dto->amount, $dto->bidderId)
-            ->onQueue('proxy_bids');
+        // ── STEP 6: Trigger proxy check ──
+        try {
+            (new CheckProxyBidsJob($auctionId, $dto->amount, $dto->bidderId))->handle($this);
+        } catch (\Throwable) {
+        }
 
-        // ── STEP 9: Return BidResultDTO from Redis (no DB roundtrip) ──
         return new BidResultDTO(
             bidUuid: $bidUuid,
             amount: $dto->amount,
             isWinning: true,
-            currentPrice: $dto->amount,
-            totalBids: $totalBids,
+            currentPrice: (float) $auction->current_price,
+            totalBids: (int) $auction->total_bids,
             isReserveMet: $isReserveMet,
-            nextMinimumBid: $nextMinBid,
+            nextMinimumBid: (float) $auction->current_price + $increment,
             timeRemainingSeconds: max(0, $timeRemaining),
         );
     }

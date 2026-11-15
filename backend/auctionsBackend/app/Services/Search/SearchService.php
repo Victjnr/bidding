@@ -5,24 +5,16 @@ namespace App\Services\Search;
 use App\Contracts\Search\ISearchService;
 use App\DTOs\Search\SearchQueryDTO;
 use App\Enums\AuctionStatus;
+use App\Http\Resources\Auction\AuctionResource;
 use App\Models\Auction;
-use Illuminate\Support\Facades\Redis;
+use App\Models\Category;
 
 class SearchService implements ISearchService
 {
     public function search(SearchQueryDTO $dto, bool $isAuthenticated = false)
     {
-        $key = 'search:' . md5(serialize($dto));
-
-        if (!$isAuthenticated && Redis::exists($key)) {
-            $cached = Redis::get($key);
-            if ($cached) {
-                return json_decode($cached);
-            }
-        }
-
         $query = Auction::query()
-            ->select(['id', 'uuid', 'category_id', 'seller_id', 'title', 'description', 'current_price', 'status', 'end_at'])
+            ->with(['media', 'seller', 'category'])
             ->where('status', $dto->status ?? AuctionStatus::Active->value);
 
         if ($dto->since) {
@@ -30,7 +22,11 @@ class SearchService implements ISearchService
         }
 
         if ($dto->categoryId) {
-            $query->where('category_id', $dto->categoryId);
+            if (is_numeric($dto->categoryId)) {
+                $query->where('category_id', (int) $dto->categoryId);
+            } else {
+                $query->whereHas('category', fn($q) => $q->where('slug', $dto->categoryId));
+            }
         }
 
         if ($dto->minPrice !== null) {
@@ -42,42 +38,33 @@ class SearchService implements ISearchService
         }
 
         if ($dto->q) {
-            $searchTerm = $dto->q;
-            // Simple sanitization for MATCH AGAINST boolean mode
-            $booleanSearch = '+' . str_replace(' ', '* +', trim($searchTerm)) . '*';
+            $searchTerm = trim($dto->q);
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('title', 'like', "%{$searchTerm}%")
+                  ->orWhere('description', 'like', "%{$searchTerm}%");
+            });
+        }
 
-            $query->whereRaw(
-                "MATCH(title,description) AGAINST(? IN BOOLEAN MODE)",
-                [$booleanSearch]
-            )->orderByRaw("MATCH(title,description) AGAINST(?) DESC", [$searchTerm]);
-        } elseif ($dto->sort) {
-            // Basic sort handling, usually via spatie/laravel-query-builder in Controller,
-            // but we add a fallback sort if q is absent.
-            if ($dto->sort === 'newest') {
+        switch ($dto->sort) {
+            case 'price_asc':
+                $query->orderBy('current_price', 'asc');
+                break;
+            case 'price_desc':
+                $query->orderBy('current_price', 'desc');
+                break;
+            case 'most_bids':
+                $query->orderBy('total_bids', 'desc');
+                break;
+            case 'newest':
                 $query->latest();
-            } elseif ($dto->sort === 'ending_soon') {
+                break;
+            case 'ending_soon':
+            default:
                 $query->orderBy('end_at', 'asc');
-            }
+                break;
         }
 
-        // Eager load related
-        $query->with([
-            'media' => function($q) { $q->where('is_primary', true); },
-            'seller:id,uuid,first_name,last_name',
-            // 'category:id,name' -> assuming Category model exists, omitted for brevity if not strictly defined yet
-        ]);
-
-        $results = $query->paginate($dto->perPage, ['*'], 'page', $dto->page);
-
-        // We could also calculate facets here via separate COUNT queries and attach them to the result
-        
-        $response = $results->toArray();
-
-        if (!$isAuthenticated) {
-            Redis::setex($key, 120, json_encode($response)); // Cache for 2 mins
-        }
-
-        return $response;
+        return $query->paginate($dto->perPage, ['*'], 'page', $dto->page);
     }
 
     public function autocomplete(string $q): array
@@ -86,13 +73,33 @@ class SearchService implements ISearchService
             return [];
         }
 
-        $q = strtolower(trim($q));
-        
-        // Redis prefix search using ZRANGEBYLEX
-        // ZRANGEBYLEX key [prefix [prefix\xff
-        // The \xff is the max byte, ensuring we get all strings starting with the prefix.
-        $results = Redis::zRangeByLex("search:autocomplete", "[{$q}", "[{$q}\xff", 0, 8);
+        $q = trim($q);
 
-        return $results ?: [];
+        $auctions = Auction::where('status', AuctionStatus::Active)
+            ->where('title', 'like', "%{$q}%")
+            ->take(5)
+            ->get(['uuid', 'title']);
+
+        $categories = Category::where('name', 'like', "%{$q}%")
+            ->take(3)
+            ->get(['slug', 'name']);
+
+        $suggestions = [];
+        foreach ($auctions as $auction) {
+            $suggestions[] = [
+                'text' => $auction->title,
+                'type' => 'auction',
+                'slug' => $auction->uuid,
+            ];
+        }
+        foreach ($categories as $cat) {
+            $suggestions[] = [
+                'text' => $cat->name,
+                'type' => 'category',
+                'slug' => $cat->slug,
+            ];
+        }
+
+        return $suggestions;
     }
 }

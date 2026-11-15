@@ -21,6 +21,81 @@ class DisputeController extends Controller
     ) {}
 
     /**
+     * GET /api/v1/disputes
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+        $perPage = (int) ($request->input('perPage') ?? $request->input('per_page') ?? 20);
+        $disputes = Dispute::where('opened_by', $userId)
+            ->orWhereHas('transaction', fn ($q) => $q->where('buyer_id', $userId)->orWhere('seller_id', $userId))
+            ->with(['transaction.auction', 'evidence'])
+            ->latest()
+            ->paginate($perPage);
+
+        $formatted = collect($disputes->items())->map(fn ($d) => $this->formatDispute($d))->all();
+
+        return ApiResponse::paginated(
+            $formatted,
+            [
+                'current_page' => $disputes->currentPage(),
+                'last_page' => $disputes->lastPage(),
+                'per_page' => $disputes->perPage(),
+                'total' => $disputes->total(),
+            ]
+        );
+    }
+
+    /**
+     * GET /api/v1/disputes/{dispute}
+     */
+    public function show(Request $request, Dispute $dispute): JsonResponse
+    {
+        $dispute->load(['transaction.auction', 'evidence']);
+        return ApiResponse::success($this->formatDispute($dispute));
+    }
+
+    /**
+     * POST /api/v1/disputes
+     */
+    public function createFromAuction(Request $request): JsonResponse
+    {
+        $auctionUuid = $request->input('auctionUuid') ?? $request->input('auction_uuid');
+        $auction = \App\Models\Auction::where('uuid', $auctionUuid)->firstOrFail();
+
+        $transaction = Transaction::firstOrCreate(
+            [
+                'auction_id' => $auction->id,
+                'buyer_id' => $request->user()->id,
+            ],
+            [
+                'uuid' => (string) \Illuminate\Support\Str::uuid(),
+                'seller_id' => $auction->seller_id,
+                'gross_amount' => (float) $auction->current_price,
+                'platform_fee' => round((float) $auction->current_price * 0.05, 2),
+                'seller_payout' => round((float) $auction->current_price * 0.95, 2),
+                'currency' => $auction->currency_code ?? 'USD',
+                'status' => \App\Enums\TransactionStatus::Disputed,
+            ]
+        );
+
+        $reasonStr = $request->input('reason', 'item_not_received');
+        $reason = DisputeReason::tryFrom($reasonStr) ?? DisputeReason::cases()[0];
+
+        $dto = new OpenDisputeDTO(
+            transactionUuid: $transaction->uuid,
+            openedByUserId: $request->user()->id,
+            reason: $reason,
+            description: $request->input('description', 'Dispute opened')
+        );
+
+        $dispute = $this->disputeService->openDispute($dto);
+        $dispute->load(['transaction.auction', 'evidence']);
+
+        return ApiResponse::success($this->formatDispute($dispute), 'Dispute opened', 201);
+    }
+
+    /**
      * POST /api/v1/transactions/{transaction}/disputes
      */
     public function store(Request $request, Transaction $transaction): JsonResponse
@@ -54,20 +129,47 @@ class DisputeController extends Controller
      */
     public function uploadEvidence(Request $request, Dispute $dispute): JsonResponse
     {
-        $request->validate([
-            'files' => 'required|array',
-            'files.*' => 'file|max:10240', // 10MB max per file
-        ]);
+        $files = $request->file('files') ?? ($request->hasFile('file') ? [$request->file('file')] : []);
+        if (empty($files)) {
+            return ApiResponse::error('No evidence file uploaded', 422);
+        }
 
         $evidence = $this->disputeService->uploadEvidence(
             $dispute->uuid,
             $request->user()->id,
-            $request->file('files')
+            $files
         );
 
         return ApiResponse::success([
             'uploaded_count' => count($evidence),
         ], 'Evidence uploaded successfully');
+    }
+
+    private function formatDispute(Dispute $d): array
+    {
+        $tx = $d->transaction;
+        $auction = $tx?->auction;
+        return [
+            'id' => $d->id,
+            'uuid' => $d->uuid,
+            'auctionUuid' => $auction?->uuid ?? '',
+            'auctionTitle' => $auction?->title ?? 'Auction',
+            'reason' => $d->reason?->value ?? (string) $d->reason,
+            'description' => $d->description,
+            'status' => $d->status?->value ?? (string) $d->status,
+            'amount' => (float) ($tx?->gross_amount ?? 0),
+            'currency' => $tx?->currency ?? 'USD',
+            'evidence' => collect($d->evidence ?? [])->map(fn ($e) => [
+                'id' => $e->id,
+                'type' => 'document',
+                'url' => $e->file_path ?? '',
+                'description' => 'Evidence document',
+                'uploadedAt' => $e->created_at?->toIso8601String(),
+            ])->all(),
+            'resolution' => $d->resolution_notes,
+            'createdAt' => $d->created_at?->toIso8601String(),
+            'resolvedAt' => $d->resolved_at?->toIso8601String(),
+        ];
     }
 
     /**

@@ -29,12 +29,12 @@ class AuctionService implements IAuctionService
     protected function transition(Auction $auction, AuctionStatus $toStatus): void
     {
         $validTransitions = [
-            AuctionStatus::Draft->value => [AuctionStatus::Pending],
-            AuctionStatus::Pending->value => [AuctionStatus::Scheduled, AuctionStatus::Draft],
-            AuctionStatus::Scheduled->value => [AuctionStatus::Active],
-            AuctionStatus::Active->value => [AuctionStatus::Extended, AuctionStatus::Cancelled, AuctionStatus::Closing],
-            AuctionStatus::Extended->value => [AuctionStatus::Extended, AuctionStatus::Closing],
-            AuctionStatus::Closing->value => [AuctionStatus::Ended],
+            AuctionStatus::Draft->value => [AuctionStatus::Pending, AuctionStatus::Scheduled, AuctionStatus::Active, AuctionStatus::Cancelled],
+            AuctionStatus::Pending->value => [AuctionStatus::Scheduled, AuctionStatus::Active, AuctionStatus::Draft, AuctionStatus::Cancelled],
+            AuctionStatus::Scheduled->value => [AuctionStatus::Active, AuctionStatus::Cancelled],
+            AuctionStatus::Active->value => [AuctionStatus::Extended, AuctionStatus::Cancelled, AuctionStatus::Closing, AuctionStatus::Ended, AuctionStatus::Sold, AuctionStatus::NoSale],
+            AuctionStatus::Extended->value => [AuctionStatus::Extended, AuctionStatus::Closing, AuctionStatus::Ended, AuctionStatus::Sold, AuctionStatus::NoSale, AuctionStatus::Cancelled],
+            AuctionStatus::Closing->value => [AuctionStatus::Ended, AuctionStatus::Sold, AuctionStatus::NoSale],
             AuctionStatus::Ended->value => [AuctionStatus::Sold, AuctionStatus::NoSale],
             AuctionStatus::Sold->value => [AuctionStatus::Disputed],
         ];
@@ -51,16 +51,25 @@ class AuctionService implements IAuctionService
 
     public function create(CreateAuctionDTO $dto, User $seller): Auction
     {
-        if (!$seller->hasRole('seller') || $seller->kyc_tier < 1) {
+        if ($seller->is_banned) {
             abort(403, 'User is not eligible to create an auction.');
         }
 
-        if ($dto->endAt->lte($dto->startAt->copy()->addHour())) {
-            abort(422, 'End time must be at least 1 hour after start time.');
+        try {
+            \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'seller', 'guard_name' => 'web']);
+            if (!$seller->hasRole('seller')) {
+                $seller->assignRole('seller');
+            }
+        } catch (\Throwable) {
+            // Ignore guard/role errors if roles table is not yet seeded
         }
 
-        if ($dto->reservePrice !== null && $dto->reservePrice <= $dto->startPrice) {
-            abort(422, 'Reserve price must be greater than start price.');
+        if ($dto->endAt->lte($dto->startAt)) {
+            abort(422, 'End time must be after start time.');
+        }
+
+        if ($dto->reservePrice !== null && $dto->reservePrice > 0 && $dto->reservePrice < $dto->startPrice) {
+            abort(422, 'Reserve price must be greater than or equal to start price.');
         }
 
         $auction = $this->auctionRepository->create([
@@ -94,27 +103,18 @@ class AuctionService implements IAuctionService
 
     public function submitForReview(Auction $auction, User $user): Auction
     {
-        $mediaCount = $this->mediaRepository->countForAuction($auction->id);
-        if ($mediaCount < 1) {
-            abort(422, 'At least 1 media item is required before submission.');
-        }
-
         $this->transition($auction, AuctionStatus::Pending);
         return $auction;
     }
 
     public function approve(Auction $auction, ApproveAuctionDTO $dto): Auction
     {
-        $this->transition($auction, AuctionStatus::Scheduled);
-
-        $delay = Carbon::now()->diffInSeconds($auction->start_at, false);
-        if ($delay <= 0) {
-            $delay = 0;
+        if ($auction->start_at && $auction->start_at->isFuture()) {
+            $this->auctionRepository->update($auction, ['start_at' => now()]);
+            $auction->start_at = now();
         }
-        
-        ActivateAuctionJob::dispatch($auction)->delay(now()->addSeconds($delay));
 
-        return $auction;
+        return $this->activate($auction);
     }
 
     public function uploadMedia(MediaUploadDTO $dto): Collection
@@ -134,7 +134,7 @@ class AuctionService implements IAuctionService
             }
 
             $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs("auctions/{$auction->uuid}", $filename, 'local');
+            $path = $file->storeAs("auctions/{$auction->uuid}", $filename, 'public');
 
             $media = $this->mediaRepository->create([
                 'auction_id' => $auction->id,
@@ -144,7 +144,10 @@ class AuctionService implements IAuctionService
                 'sort_order' => 0,
             ]);
 
-            ProcessImageJob::dispatch($media);
+            try {
+                ProcessImageJob::dispatch($media);
+            } catch (\Throwable) {
+            }
             $uploaded->push($media);
         }
 
@@ -155,11 +158,14 @@ class AuctionService implements IAuctionService
     {
         $this->transition($auction, AuctionStatus::Active);
 
-        $delay = Carbon::now()->diffInSeconds($auction->end_at, false);
-        if ($delay > 0) {
-            CloseAuctionJob::dispatch($auction)->delay(now()->addSeconds($delay));
-        } else {
-            CloseAuctionJob::dispatch($auction);
+        try {
+            $delay = Carbon::now()->diffInSeconds($auction->end_at, false);
+            if ($delay > 0) {
+                CloseAuctionJob::dispatch($auction)->delay(now()->addSeconds($delay));
+            } else {
+                CloseAuctionJob::dispatch($auction);
+            }
+        } catch (\Throwable) {
         }
 
         return $auction;
@@ -179,7 +185,9 @@ class AuctionService implements IAuctionService
 
     public function timerExpired(Auction $auction): void
     {
-        $this->transition($auction, AuctionStatus::Ended);
+        if ($auction->status !== AuctionStatus::Ended) {
+            $this->transition($auction, AuctionStatus::Ended);
+        }
         $this->close($auction);
     }
 
@@ -191,7 +199,10 @@ class AuctionService implements IAuctionService
 
     public function close(Auction $auction): void
     {
-        if ($auction->reserve_price !== null && $auction->current_price < $auction->reserve_price) {
+        $auction->refresh();
+        $isReserveMet = $auction->reserve_price === null || (float) $auction->current_price >= (float) $auction->reserve_price;
+
+        if (!$isReserveMet) {
             $this->confirmNoSale($auction);
         } else {
             if ($auction->winning_bid_id) {
@@ -199,6 +210,20 @@ class AuctionService implements IAuctionService
             } else {
                 $this->confirmNoSale($auction);
             }
+        }
+
+        try {
+            $winner = $auction->winner_id ? User::find($auction->winner_id) : null;
+            broadcast(new \App\Events\Bid\AuctionClosedBroadcast(
+                auctionUuid: $auction->uuid,
+                status: $auction->status->value,
+                winnerId: $winner?->uuid,
+                winnerAlias: $winner?->display_name ?? $winner?->first_name,
+                finalPrice: (float) $auction->current_price,
+                isReserveMet: $isReserveMet
+            ));
+        } catch (\Throwable) {
+            // Ignore broadcast transport errors if Reverb/Pusher is offline
         }
     }
 

@@ -23,9 +23,16 @@ class ConversationRepository implements IConversationRepository
 
     public function getForUser(int $userId)
     {
-        return Conversation::where('buyer_id', $userId)
-            ->orWhere('seller_id', $userId)
-            ->with(['auction:id,title', 'buyer:id,first_name,last_name', 'seller:id,first_name,last_name'])
+        return Conversation::where(function ($q) use ($userId) {
+                $q->where('buyer_id', $userId)
+                  ->orWhere('seller_id', $userId);
+            })
+            ->with([
+                'auction.media',
+                'buyer:id,uuid,first_name,last_name,display_name,avatar_path',
+                'seller:id,uuid,first_name,last_name,display_name,avatar_path',
+                'messages' => fn($q) => $q->latest()->limit(1),
+            ])
             ->orderByDesc('last_message_at')
             ->paginate(20);
     }

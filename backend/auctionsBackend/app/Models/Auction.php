@@ -73,9 +73,29 @@ class Auction extends Model
         return 'uuid';
     }
 
+    public function resolveRouteBinding($value, $field = null)
+    {
+        if ($field) {
+            return $this->where($field, $value)->firstOrFail();
+        }
+        return $this->where('uuid', $value)
+            ->when(is_numeric($value), fn($q) => $q->orWhere('id', (int) $value))
+            ->firstOrFail();
+    }
+
     public function seller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'seller_id');
+    }
+
+    public function winner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'winner_id');
+    }
+
+    public function winningBid(): BelongsTo
+    {
+        return $this->belongsTo(Bid::class, 'winning_bid_id');
     }
 
     public function category(): BelongsTo
@@ -86,5 +106,22 @@ class Auction extends Model
     public function media(): HasMany
     {
         return $this->hasMany(AuctionMedia::class);
+    }
+
+    public function bids(): HasMany
+    {
+        return $this->hasMany(Bid::class);
+    }
+
+    public function proxyBids(): HasMany
+    {
+        return $this->hasMany(ProxyBid::class);
+    }
+
+    public function watchers()
+    {
+        return $this->belongsToMany(User::class, 'watchlist')
+            ->withPivot(['notify_outbid', 'notify_ending_soon', 'notify_price_drop'])
+            ->withTimestamps();
     }
 }

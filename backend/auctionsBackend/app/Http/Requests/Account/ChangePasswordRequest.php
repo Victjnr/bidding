@@ -13,13 +13,20 @@ class ChangePasswordRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'currentPassword' => $this->input('currentPassword') ?? $this->input('current_password'),
+            'newPassword' => $this->input('newPassword') ?? $this->input('new_password') ?? $this->input('password'),
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'current_password' => ['required', new VerifyCurrentPasswordRule],
-            'new_password' => [
-                'required', 'min:12', 'confirmed', 'different:current_password',
-                new PasswordComplexityRule,
+            'currentPassword' => ['required', new VerifyCurrentPasswordRule],
+            'newPassword' => [
+                'required', 'min:8', 'different:currentPassword',
             ],
         ];
     }

@@ -20,9 +20,17 @@ class SearchController extends Controller
         $dto = SearchQueryDTO::fromRequest($request);
         $isAuthenticated = auth('sanctum')->check();
 
-        $results = $this->searchService->search($dto, $isAuthenticated);
+        $paginator = $this->searchService->search($dto, $isAuthenticated);
 
-        return ApiResponse::success($results);
+        return ApiResponse::paginated(
+            \App\Http\Resources\Auction\AuctionResource::collection($paginator->items())->resolve(),
+            [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ]
+        );
     }
 
     public function autocomplete(Request $request): JsonResponse
@@ -30,6 +38,38 @@ class SearchController extends Controller
         $q = $request->input('q', '');
         $results = $this->searchService->autocomplete($q);
 
-        return ApiResponse::success(['suggestions' => $results]);
+        return ApiResponse::success($results);
+    }
+
+    public function facets(Request $request): JsonResponse
+    {
+        $categories = \App\Models\Category::withCount(['auctions' => fn($q) => $q->where('status', 'active')])
+            ->get()
+            ->map(fn($c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'slug' => $c->slug,
+                'count' => (int) ($c->auctions_count ?? 0),
+            ]);
+
+        return ApiResponse::success([
+            'categories' => $categories,
+            'conditions' => [
+                ['condition' => 'new', 'count' => \App\Models\Auction::where('status', 'active')->where('condition', 'new')->count()],
+                ['condition' => 'like_new', 'count' => \App\Models\Auction::where('status', 'active')->where('condition', 'like_new')->count()],
+                ['condition' => 'good', 'count' => \App\Models\Auction::where('status', 'active')->where('condition', 'good')->count()],
+                ['condition' => 'fair', 'count' => \App\Models\Auction::where('status', 'active')->where('condition', 'fair')->count()],
+            ],
+            'priceRanges' => [
+                ['min' => 0, 'max' => 100, 'count' => \App\Models\Auction::where('status', 'active')->whereBetween('current_price', [0, 100])->count()],
+                ['min' => 100, 'max' => 1000, 'count' => \App\Models\Auction::where('status', 'active')->whereBetween('current_price', [100, 1000])->count()],
+                ['min' => 1000, 'max' => 10000, 'count' => \App\Models\Auction::where('status', 'active')->whereBetween('current_price', [1000, 10000])->count()],
+            ],
+            'auctionTypes' => [
+                ['type' => 'standard', 'count' => \App\Models\Auction::where('status', 'active')->where('auction_type', 'standard')->count()],
+                ['type' => 'reserve', 'count' => \App\Models\Auction::where('status', 'active')->where('auction_type', 'reserve')->count()],
+                ['type' => 'buy_now', 'count' => \App\Models\Auction::where('status', 'active')->where('auction_type', 'buy_now')->count()],
+            ],
+        ]);
     }
 }

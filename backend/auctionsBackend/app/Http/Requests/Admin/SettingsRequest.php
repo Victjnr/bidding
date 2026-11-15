@@ -14,8 +14,9 @@ class SettingsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'key' => 'required|string|max:255',
-            'value' => 'required', // Can be anything
+            'key' => 'nullable|string|max:255',
+            'value' => 'nullable',
+            'settings' => 'nullable|array',
         ];
     }
 }

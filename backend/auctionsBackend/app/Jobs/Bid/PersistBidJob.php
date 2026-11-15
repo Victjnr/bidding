@@ -31,7 +31,7 @@ class PersistBidJob implements ShouldQueue
     public function handle(): void
     {
         DB::transaction(function () {
-            Bid::create([
+            $bid = Bid::create([
                 'uuid' => $this->bidUuid,
                 'auction_id' => $this->auctionId,
                 'bidder_id' => $this->bidderId,
@@ -44,6 +44,8 @@ class PersistBidJob implements ShouldQueue
             Auction::where('id', $this->auctionId)->update([
                 'current_price' => $this->amount,
                 'total_bids' => DB::raw('total_bids + 1'),
+                'winning_bid_id' => $bid->id,
+                'winner_id' => $this->bidderId,
             ]);
         });
 

@@ -18,6 +18,6 @@ class AdminPolicy
 
     public function manageFeatureFlags(User $user): bool
     {
-        return $user->hasRole('super_admin');
+        return $user->hasAnyRole(['admin', 'super_admin']);
     }
 }

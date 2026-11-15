@@ -14,8 +14,8 @@ use App\Jobs\Account\GenerateDataExportJob;
 use App\Jobs\Account\ResizeImageJob;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -31,20 +31,34 @@ class AccountService implements IAccountService
         $changedFields = [];
 
         // Whitelist-only update — never mass-assign from request
-        if ($dto->displayName !== null && $dto->displayName !== $user->display_name) {
-            // Uniqueness checked in FormRequest
-            $changedFields['display_name'] = $dto->displayName;
-            $user->display_name = $dto->displayName;
+        $firstName = $dto->firstName === '' ? null : $dto->firstName;
+        if ($firstName !== null && $firstName !== $user->first_name) {
+            $changedFields['first_name'] = $firstName;
+            $user->first_name = $firstName;
         }
 
-        if ($dto->bio !== null) {
-            $changedFields['bio'] = $dto->bio;
-            $user->bio = $dto->bio;
+        $lastName = $dto->lastName === '' ? null : $dto->lastName;
+        if ($lastName !== null && $lastName !== $user->last_name) {
+            $changedFields['last_name'] = $lastName;
+            $user->last_name = $lastName;
         }
 
-        if ($dto->phone !== null) {
-            $changedFields['phone'] = $dto->phone;
-            $user->phone = $dto->phone;
+        $displayName = $dto->displayName === '' ? null : $dto->displayName;
+        if ($displayName !== null && $displayName !== $user->display_name) {
+            $changedFields['display_name'] = $displayName;
+            $user->display_name = $displayName;
+        }
+
+        $bio = $dto->bio === '' ? null : $dto->bio;
+        if ($bio !== null) {
+            $changedFields['bio'] = $bio;
+            $user->bio = $bio;
+        }
+
+        $phone = $dto->phone === '' ? null : $dto->phone;
+        if ($phone !== null) {
+            $changedFields['phone'] = $phone;
+            $user->phone = $phone;
         }
 
         if (!empty($changedFields)) {
@@ -100,8 +114,8 @@ class AccountService implements IAccountService
         // Revoke ALL Sanctum tokens (force re-login on all devices)
         $user->tokens()->delete();
 
-        // Delete all refresh tokens from Redis
-        Redis::del("user:refresh_tokens:{$user->id}");
+        // Delete all refresh tokens from Cache
+        Cache::forget("user:refresh_tokens:{$user->id}");
 
         PasswordChanged::dispatch($user);
     }

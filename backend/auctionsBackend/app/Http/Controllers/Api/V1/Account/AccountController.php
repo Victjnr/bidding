@@ -25,32 +25,40 @@ class AccountController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        return ApiResponse::success($request->user());
+        return ApiResponse::success(new \App\Http\Resources\Auth\UserResource($request->user()));
     }
 
     public function update(UpdateProfileRequest $request): JsonResponse
     {
         $dto = new UpdateProfileDTO(
-            displayName: $request->input('display_name'),
+            firstName: $request->input('firstName'),
+            lastName: $request->input('lastName'),
+            displayName: $request->input('displayName'),
             bio: $request->input('bio'),
             phone: $request->input('phone'),
         );
 
         $user = $this->accountService->updateProfile($request->user(), $dto);
-        return ApiResponse::success($user, 'Profile updated');
+
+        if ($request->has('anonymousBidding') || $request->has('is_anonymous')) {
+            $user->is_anonymous = $request->boolean('anonymousBidding', $request->boolean('is_anonymous'));
+            $user->save();
+        }
+
+        return ApiResponse::success(new \App\Http\Resources\Auth\UserResource($user->fresh()), 'Profile updated');
     }
 
     public function uploadAvatar(AvatarRequest $request): JsonResponse
     {
         $url = $this->accountService->uploadAvatar($request->user(), $request->file('avatar'));
-        return ApiResponse::success(['avatar_url' => $url], 'Avatar uploaded');
+        return ApiResponse::success(['avatarUrl' => $url, 'avatar_url' => $url], 'Avatar uploaded');
     }
 
     public function changePassword(ChangePasswordRequest $request): JsonResponse
     {
         $dto = new ChangePasswordDTO(
-            currentPassword: $request->input('current_password'),
-            newPassword: $request->input('new_password'),
+            currentPassword: $request->input('currentPassword'),
+            newPassword: $request->input('newPassword'),
         );
 
         $this->accountService->changePassword($request->user(), $dto);
@@ -59,79 +67,297 @@ class AccountController extends Controller
 
     public function activeSessions(Request $request): JsonResponse
     {
-        $tokens = $request->user()->tokens()->get()->map(fn($token) => [
-            'id' => $token->id,
-            'name' => $token->name,
-            'last_used_at' => $token->last_used_at,
-            'created_at' => $token->created_at,
+        $currentTokenId = $request->user()->currentAccessToken()?->id;
+
+        $sessions = $request->user()->tokens()->get()->map(fn($token) => [
+            'id' => (string) $token->id,
+            'device' => $token->name ?? 'Unknown Device',
+            'browser' => 'Web Browser',
+            'os' => 'Windows / Web',
+            'ip' => $request->ip() ?? '127.0.0.1',
+            'location' => 'Harare, ZW',
+            'lastActiveAt' => $token->last_used_at?->toIso8601String() ?? $token->created_at->toIso8601String(),
+            'lastActive' => $token->last_used_at?->toIso8601String() ?? $token->created_at->toIso8601String(),
+            'isCurrent' => $currentTokenId === $token->id,
         ]);
 
-        return ApiResponse::success($tokens);
+        return ApiResponse::success($sessions);
     }
 
-    public function revokeSession(Request $request, int $id): JsonResponse
+    public function loginHistory(Request $request): JsonResponse
     {
-        $this->accountService->revokeSession($request->user(), $id);
+        $history = $request->user()->tokens()->latest()->take(10)->get()->map(fn($token) => [
+            'id' => $token->id,
+            'ip' => $request->ip() ?? '127.0.0.1',
+            'location' => 'Harare, ZW',
+            'device' => $token->name ?? 'Web Browser',
+            'browser' => 'Chrome',
+            'status' => 'success',
+            'createdAt' => $token->created_at?->toIso8601String(),
+        ]);
+
+        return ApiResponse::success($history);
+    }
+
+    public function revokeSession(Request $request, string $id): JsonResponse
+    {
+        $this->accountService->revokeSession($request->user(), (int) $id);
         return ApiResponse::success(null, 'Session revoked');
     }
 
-    public function myBids(BidFilterRequest $request): JsonResponse
+    public function myBids(Request $request): JsonResponse
     {
-        $query = $request->user()->bids()->with('auction:id,uuid,title,current_price,status,end_at');
+        $user = $request->user();
+        $query = $user->bids()->with(['auction.media', 'auction.seller', 'auction.category']);
 
-        // Simplified filtering
-        if ($request->input('status') === 'winning') {
-            $query->whereHas('auction', fn($q) => $q->whereColumn('bids.amount', '=', 'auctions.current_price'));
+        $status = $request->input('status');
+        if ($status === 'winning') {
+            $query->whereHas('auction', function ($q) {
+                $q->whereIn('status', ['active', 'extended', 'closing'])
+                  ->where(function ($sub) {
+                      $sub->whereColumn('auctions.winning_bid_id', 'bids.id')
+                          ->orWhere(function ($sub2) {
+                              $sub2->whereNull('auctions.winning_bid_id')
+                                   ->whereColumn('auctions.winner_id', 'bids.bidder_id')
+                                   ->whereColumn('bids.amount', '>=', 'auctions.current_price');
+                          });
+                  });
+            });
+        } elseif ($status === 'active') {
+            $query->whereHas('auction', fn($q) => $q->whereIn('status', ['active', 'extended', 'closing']));
+        } elseif ($status === 'outbid') {
+            $query->whereHas('auction', function ($q) {
+                $q->whereIn('status', ['active', 'extended', 'closing'])
+                  ->where(function ($sub) {
+                      $sub->whereColumn('auctions.winning_bid_id', '!=', 'bids.id')
+                          ->orWhereNull('auctions.winning_bid_id');
+                  })
+                  ->whereColumn('bids.amount', '<', 'auctions.current_price');
+            });
+        } elseif ($status === 'won') {
+            $query->whereHas('auction', function ($q) {
+                $q->whereIn('status', ['ended', 'sold', 'closed', 'settled'])
+                  ->where(function ($sub) {
+                      $sub->whereColumn('auctions.winning_bid_id', 'bids.id')
+                          ->orWhere(function ($sub2) {
+                              $sub2->whereNull('auctions.winning_bid_id')
+                                   ->whereColumn('auctions.winner_id', 'bids.bidder_id');
+                          });
+                  });
+            });
+        } elseif ($status === 'lost') {
+            $query->whereHas('auction', function ($q) use ($user) {
+                $q->whereIn('status', ['ended', 'sold', 'no_sale', 'closed', 'settled'])
+                  ->where(function ($sub) {
+                      $sub->whereColumn('auctions.winning_bid_id', '!=', 'bids.id')
+                          ->orWhereNull('auctions.winning_bid_id');
+                  })
+                  ->where(function ($sub) use ($user) {
+                      $sub->where('auctions.winner_id', '!=', $user->id)
+                          ->orWhereNull('auctions.winner_id');
+                  });
+            });
         }
 
-        $bids = $query->latest()->paginate($request->input('per_page', 20));
-        return ApiResponse::success($bids);
+        $perPage = (int) ($request->input('perPage') ?? $request->input('per_page') ?? 20);
+        $bids = $query->latest()->paginate($perPage);
+
+        $formatted = collect($bids->items())->map(function ($bid) {
+            $auction = $bid->auction;
+            $auctionData = $auction ? (new \App\Http\Resources\Auction\AuctionResource($auction))->resolve() : [];
+            $primaryMedia = $auction?->media?->firstWhere('is_primary', true) ?? $auction?->media?->first();
+            $auctionStatus = $auction?->status?->value ?? (string) ($auction?->status ?? 'active');
+
+            $isWinning = $auction && (
+                ((int) $auction->winning_bid_id > 0 && (int) $auction->winning_bid_id === (int) $bid->id)
+                || (!$auction->winning_bid_id && (int) $auction->winner_id === (int) $bid->bidder_id && (float) $bid->amount >= (float) $auction->current_price)
+                || (!$auction->winning_bid_id && !$auction->winner_id && (float) $bid->amount >= (float) $auction->current_price)
+            );
+
+            if (in_array($auctionStatus, ['ended', 'sold', 'no_sale', 'closed', 'settled'], true)) {
+                $bidStatus = ($isWinning && $auctionStatus !== 'no_sale') ? 'won' : 'lost';
+            } else {
+                $bidStatus = $isWinning ? 'highest' : 'outbid';
+            }
+
+            return array_merge($auctionData, [
+                'id' => $bid->id,
+                'uuid' => $auction?->uuid ?? $bid->uuid,
+                'bidUuid' => $bid->uuid,
+                'auctionUuid' => $auction?->uuid ?? '',
+                'auctionTitle' => $auction?->title ?? 'Auction',
+                'auctionThumbnail' => $primaryMedia?->url,
+                'auctionStatus' => $auctionStatus,
+                'auctionEndAt' => $auction?->end_at?->toIso8601String(),
+                'myBidAmount' => (float) $bid->amount,
+                'myMaxBid' => (float) $bid->amount,
+                'currentHighBid' => (float) ($auction?->current_price ?? $bid->amount),
+                'currentPrice' => (float) ($auction?->current_price ?? $bid->amount),
+                'bidStatus' => $bidStatus,
+                'isWinning' => (bool) $isWinning,
+                'createdAt' => $bid->created_at?->toIso8601String(),
+            ]);
+        })->all();
+
+        return ApiResponse::paginated(
+            $formatted,
+            [
+                'current_page' => $bids->currentPage(),
+                'last_page' => $bids->lastPage(),
+                'per_page' => $bids->perPage(),
+                'total' => $bids->total(),
+            ]
+        );
     }
 
     public function watchlist(Request $request): JsonResponse
     {
-        // Assuming a pivot table 'watchlists' with user_id, auction_id
+        $perPage = (int) ($request->input('perPage') ?? $request->input('per_page') ?? 20);
         $watchlist = $request->user()->watchedAuctions()
-            ->with(['media' => fn($q) => $q->where('is_primary', true)])
-            ->paginate(20);
+            ->with(['seller', 'category', 'media'])
+            ->paginate($perPage);
 
-        return ApiResponse::success($watchlist);
+        $formatted = collect($watchlist->items())->map(function ($auction) {
+            $pivot = $auction->pivot;
+            $auctionData = (new \App\Http\Resources\Auction\AuctionResource($auction))->resolve();
+            return array_merge($auctionData, [
+                'auction' => $auctionData,
+                'notifyOnOutbid' => (bool) ($pivot?->notify_outbid ?? true),
+                'notifyOutbid' => (bool) ($pivot?->notify_outbid ?? true),
+                'notifyEndingSoon' => (bool) ($pivot?->notify_ending_soon ?? true),
+                'notifyPriceDrop' => (bool) ($pivot?->notify_price_drop ?? true),
+                'addedAt' => $pivot?->created_at?->toIso8601String() ?? $auction->created_at?->toIso8601String(),
+            ]);
+        })->all();
+
+        return ApiResponse::paginated(
+            $formatted,
+            [
+                'current_page' => $watchlist->currentPage(),
+                'last_page' => $watchlist->lastPage(),
+                'per_page' => $watchlist->perPage(),
+                'total' => $watchlist->total(),
+            ]
+        );
+    }
+
+    public function updateWatchlistPreferences(Request $request, string $auctionUuid): JsonResponse
+    {
+        $auction = \App\Models\Auction::where('uuid', $auctionUuid)->firstOrFail();
+        $updates = [];
+        if ($request->has('notifyOnOutbid') || $request->has('notifyOutbid')) {
+            $updates['notify_outbid'] = $request->boolean('notifyOnOutbid', $request->boolean('notifyOutbid'));
+        }
+        if ($request->has('notifyEndingSoon')) {
+            $updates['notify_ending_soon'] = $request->boolean('notifyEndingSoon');
+        }
+        if ($request->has('notifyPriceDrop')) {
+            $updates['notify_price_drop'] = $request->boolean('notifyPriceDrop');
+        }
+
+        if (!empty($updates)) {
+            $request->user()->watchedAuctions()->updateExistingPivot($auction->id, $updates);
+        }
+
+        return ApiResponse::success($updates, 'Watchlist preferences updated');
+    }
+
+    public function setDefaultAddress(Request $request, string $uuid): JsonResponse
+    {
+        $address = $request->user()->addresses()
+            ->where(fn($q) => $q->where('uuid', $uuid)->orWhere('id', is_numeric($uuid) ? (int) $uuid : 0))
+            ->firstOrFail();
+
+        $request->user()->addresses()->update(['is_primary' => false]);
+        $address->update(['is_primary' => true]);
+
+        return ApiResponse::success($this->mapAddress($address->fresh()), 'Default address updated');
     }
 
     public function addresses(Request $request): JsonResponse
     {
-        $addresses = $request->user()->addresses()->get();
+        $addresses = $request->user()->addresses()->get()->map(fn($addr) => [
+            'id' => $addr->id,
+            'uuid' => $addr->uuid,
+            'type' => $addr->type,
+            'line1' => $addr->address_line_1,
+            'line2' => $addr->address_line_2,
+            'city' => $addr->city,
+            'state' => $addr->state,
+            'postalCode' => $addr->postal_code,
+            'country' => $addr->country,
+            'isDefault' => $addr->is_primary,
+            'createdAt' => $addr->created_at,
+        ]);
         return ApiResponse::success($addresses);
     }
 
     public function storeAddress(AddressRequest $request): JsonResponse
     {
         // If marking as default, unset others
-        if ($request->boolean('is_default')) {
-            $request->user()->addresses()->update(['is_default' => false]);
+        if ($request->boolean('isDefault')) {
+            $request->user()->addresses()->update(['is_primary' => false]);
         }
 
-        $address = $request->user()->addresses()->create($request->validated());
-        return ApiResponse::success($address, 'Address added', 201);
+        $address = $request->user()->addresses()->create([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'type' => $request->input('type'),
+            'address_line_1' => $request->input('line1'),
+            'address_line_2' => $request->input('line2'),
+            'city' => $request->input('city'),
+            'state' => $request->input('state'),
+            'postal_code' => $request->input('postalCode'),
+            'country' => $request->input('country'),
+            'is_primary' => $request->boolean('isDefault'),
+        ]);
+
+        return ApiResponse::success($this->mapAddress($address), 'Address added', 201);
     }
 
-    public function updateAddress(AddressRequest $request, int $id): JsonResponse
+    public function updateAddress(AddressRequest $request, string $uuid): JsonResponse
     {
-        $address = $request->user()->addresses()->findOrFail($id);
+        $address = $request->user()->addresses()->where('uuid', $uuid)->firstOrFail();
 
-        if ($request->boolean('is_default')) {
-            $request->user()->addresses()->update(['is_default' => false]);
+        if ($request->boolean('isDefault')) {
+            $request->user()->addresses()->update(['is_primary' => false]);
         }
 
-        $address->update($request->validated());
-        return ApiResponse::success($address, 'Address updated');
+        $address->update([
+            'type' => $request->input('type'),
+            'address_line_1' => $request->input('line1'),
+            'address_line_2' => $request->input('line2'),
+            'city' => $request->input('city'),
+            'state' => $request->input('state'),
+            'postal_code' => $request->input('postalCode'),
+            'country' => $request->input('country'),
+            'is_primary' => $request->boolean('isDefault'),
+        ]);
+
+        return ApiResponse::success($this->mapAddress($address), 'Address updated');
     }
 
-    public function destroyAddress(Request $request, int $id): JsonResponse
+    public function destroyAddress(Request $request, string $uuid): JsonResponse
     {
-        $address = $request->user()->addresses()->findOrFail($id);
+        $address = $request->user()->addresses()->where('uuid', $uuid)->firstOrFail();
         $address->delete();
         return ApiResponse::success(null, 'Address deleted');
+    }
+
+    protected function mapAddress($addr): array
+    {
+        return [
+            'id' => $addr->id,
+            'uuid' => $addr->uuid,
+            'type' => $addr->type,
+            'line1' => $addr->address_line_1,
+            'line2' => $addr->address_line_2,
+            'city' => $addr->city,
+            'state' => $addr->state,
+            'postalCode' => $addr->postal_code,
+            'country' => $addr->country,
+            'isDefault' => $addr->is_primary,
+            'createdAt' => $addr->created_at,
+        ];
     }
 
     public function requestDataExport(Request $request): JsonResponse

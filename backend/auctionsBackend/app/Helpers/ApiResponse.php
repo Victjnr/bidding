@@ -39,6 +39,16 @@ class ApiResponse
      */
     public static function paginated(mixed $data, array $meta, string $message = ''): JsonResponse
     {
-        return self::success($data, $message, 200, $meta);
+        $normalizedMeta = array_merge($meta, [
+            'currentPage' => $meta['currentPage'] ?? $meta['current_page'] ?? 1,
+            'lastPage'    => $meta['lastPage'] ?? $meta['last_page'] ?? 1,
+            'perPage'     => $meta['perPage'] ?? $meta['per_page'] ?? 15,
+            'total'       => $meta['total'] ?? 0,
+            'current_page' => $meta['current_page'] ?? $meta['currentPage'] ?? 1,
+            'last_page'    => $meta['last_page'] ?? $meta['lastPage'] ?? 1,
+            'per_page'     => $meta['per_page'] ?? $meta['perPage'] ?? 15,
+        ]);
+
+        return self::success($data, $message, 200, $normalizedMeta);
     }
 }

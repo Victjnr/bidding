@@ -12,16 +12,24 @@ class KycUploadRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (!$this->has('type') && $this->has('document_type')) {
+            $this->merge([
+                'type' => $this->input('document_type'),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
-            'type' => 'required|in:national_id,passport,drivers_license,utility_bill,selfie',
+            'type' => 'required|in:id_card,national_id,passport,drivers_license,utility_bill,proof_of_address,selfie',
             'file' => [
                 'required',
                 'file',
-                'mimes:jpg,jpeg,png,pdf',
-                'max:5120',
-                new MimeMagicRule()
+                'mimes:jpg,jpeg,png,pdf,webp',
+                'max:10240',
             ],
         ];
     }

@@ -3,6 +3,7 @@
 namespace App\Events\Bid;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -20,7 +21,10 @@ class AuctionExtended implements ShouldBroadcast
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel("auction.{$this->auctionUuid}")];
+        return [
+            new PresenceChannel("auction.{$this->auctionUuid}"),
+            new PrivateChannel("auction.{$this->auctionUuid}"),
+        ];
     }
 
     public function broadcastAs(): string
@@ -31,7 +35,10 @@ class AuctionExtended implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
+            'auctionUuid' => $this->auctionUuid,
+            'newEndAt' => $this->newEndAt,
             'new_end_at' => $this->newEndAt,
+            'extensionsCount' => $this->extensionCount,
             'extension_count' => $this->extensionCount,
         ];
     }

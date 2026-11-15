@@ -41,6 +41,21 @@ class Dispute extends Model
         });
     }
 
+    public function getRouteKeyName()
+    {
+        return 'uuid';
+    }
+
+    public function resolveRouteBinding($value, $field = null)
+    {
+        if ($field) {
+            return $this->where($field, $value)->firstOrFail();
+        }
+        return $this->where('uuid', $value)
+            ->when(is_numeric($value), fn($q) => $q->orWhere('id', (int) $value))
+            ->firstOrFail();
+    }
+
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);

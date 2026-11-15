@@ -26,8 +26,11 @@ class KycService implements IKycService
         $filename = Str::uuid() . '.' . $dto->file->getClientOriginalExtension();
         $path = $dto->file->storeAs('kyc', $filename, 'local');
 
+        $user = \App\Models\User::where('uuid', $dto->userId)->orWhere('id', $dto->userId)->first();
+        $resolvedUserId = $user ? $user->id : $dto->userId;
+
         $document = $this->kycRepository->create([
-            'user_id' => $dto->userId,
+            'user_id' => $resolvedUserId,
             'type' => $dto->type->value,
             'file_path' => $path,
             'status' => KycStatus::Pending->value,
@@ -57,8 +60,13 @@ class KycService implements IKycService
 
         if ($dto->status === KycStatus::Approved) {
             $user = $this->userRepository->findById($document->user_id);
-            // Example tier bump
-            $this->userRepository->update($user, ['kyc_tier' => 2]);
+            if ($user) {
+                $this->userRepository->update($user, ['kyc_tier' => 'tier_2']);
+                \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'seller', 'guard_name' => 'web']);
+                if (!$user->hasRole('seller')) {
+                    $user->assignRole('seller');
+                }
+            }
             event(new KycApproved($document));
         } else if ($dto->status === KycStatus::Rejected) {
             event(new KycRejected($document));

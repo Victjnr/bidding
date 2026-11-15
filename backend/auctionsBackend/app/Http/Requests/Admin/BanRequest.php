@@ -11,10 +11,17 @@ class BanRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'reason' => $this->input('reason') ?: 'Banned by administrator',
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'reason' => 'required|string|max:255',
+            'reason' => 'nullable|string|max:255',
         ];
     }
 }

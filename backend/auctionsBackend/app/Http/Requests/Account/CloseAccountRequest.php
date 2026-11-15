@@ -12,6 +12,15 @@ class CloseAccountRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (!$this->has('confirmation_text') && $this->has('confirmation')) {
+            $this->merge([
+                'confirmation_text' => $this->input('confirmation'),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [

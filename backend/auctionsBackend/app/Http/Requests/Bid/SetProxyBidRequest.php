@@ -11,6 +11,15 @@ class SetProxyBidRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (!$this->has('max_amount') && $this->has('maxAmount')) {
+            $this->merge([
+                'max_amount' => $this->input('maxAmount'),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [

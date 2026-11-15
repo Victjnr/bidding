@@ -12,13 +12,23 @@ class RegisterRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'first_name' => $this->input('first_name') ?? $this->input('firstName'),
+            'last_name' => $this->input('last_name') ?? $this->input('lastName'),
+            'password_confirmation' => $this->input('password_confirmation') ?? $this->input('passwordConfirmation'),
+            'terms_accepted' => $this->input('terms_accepted') ?? $this->input('termsAccepted') ?? true,
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'email' => 'required|email:rfc,dns|max:180|unique:users,email',
+            'email' => 'required|email|max:180|unique:users,email',
             'password' => [
                 'required',
-                'min:12',
+                'min:8',
                 'confirmed',
                 new \App\Rules\PasswordComplexityRule()
             ],

@@ -58,8 +58,13 @@ class CheckProxyBidsJob implements ShouldQueue
             $counterAmount = $this->incomingAmount + $increment;
 
             if ($counterAmount > $decryptedMax) {
-                // Counter would exceed max — bid at max, then mark exhausted
-                $counterAmount = $decryptedMax;
+                // Counter would exceed max and cannot meet minimum bid increment — mark exhausted
+                $proxy->update(['is_exhausted' => true]);
+                try {
+                    event(new ProxyBidExhausted($proxy->bidder_id, $auction->uuid));
+                } catch (\Throwable) {
+                }
+                continue;
             }
 
             // Place the automatic counter-bid
@@ -75,7 +80,10 @@ class CheckProxyBidsJob implements ShouldQueue
             // If we bid at max, mark exhausted after placing
             if ($counterAmount >= $decryptedMax) {
                 $proxy->update(['is_exhausted' => true]);
-                event(new ProxyBidExhausted($proxy->bidder_id, $auction->uuid));
+                try {
+                    event(new ProxyBidExhausted($proxy->bidder_id, $auction->uuid));
+                } catch (\Throwable) {
+                }
             }
 
             // Only the first (earliest) competing proxy fires

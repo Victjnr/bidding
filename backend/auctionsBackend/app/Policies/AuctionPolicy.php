@@ -19,6 +19,7 @@ class AuctionPolicy
             AuctionStatus::Closing,
             AuctionStatus::Ended,
             AuctionStatus::Sold,
+            AuctionStatus::NoSale,
         ];
 
         if (in_array($auction->status, $publicStatuses)) {
@@ -29,15 +30,15 @@ class AuctionPolicy
             return false;
         }
 
-        return $user->id === $auction->seller_id || $user->hasAnyRole(['admin', 'moderator']);
+        return $user->id === $auction->seller_id || $user->hasAnyRole(['admin', 'super_admin', 'moderator']);
     }
 
     /**
-     * auth + hasRole(seller) + kyc_tier >= 1
+     * Any authenticated non-banned user can create an auction (seller role is auto-assigned).
      */
     public function create(User $user): bool
     {
-        return $user->hasRole('seller') && ($user->kyc_tier ?? 0) >= 1;
+        return !$user->is_banned;
     }
 
     /**
@@ -45,7 +46,7 @@ class AuctionPolicy
      */
     public function update(User $user, Auction $auction): bool
     {
-        return $user->id === $auction->seller_id && $auction->status->isEditable();
+        return ($user->id === $auction->seller_id && $auction->status->isEditable()) || $user->hasAnyRole(['admin', 'super_admin']);
     }
 
     /**
@@ -53,22 +54,22 @@ class AuctionPolicy
      */
     public function delete(User $user, Auction $auction): bool
     {
-        return $user->id === $auction->seller_id && $auction->status === AuctionStatus::Draft;
+        return ($user->id === $auction->seller_id && $auction->status === AuctionStatus::Draft) || $user->hasAnyRole(['admin', 'super_admin']);
     }
 
     /**
-     * auth + hasAnyRole([admin, moderator])
+     * auth + hasAnyRole([admin, super_admin, moderator])
      */
     public function approve(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'moderator']);
+        return $user->hasAnyRole(['admin', 'super_admin', 'moderator']);
     }
 
     /**
-     * auth + hasRole(admin)
+     * auth + hasAnyRole([admin, super_admin])
      */
     public function forceClose(User $user): bool
     {
-        return $user->hasRole('admin');
+        return $user->hasAnyRole(['admin', 'super_admin']);
     }
 }

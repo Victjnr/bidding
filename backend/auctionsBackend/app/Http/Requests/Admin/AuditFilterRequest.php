@@ -14,12 +14,14 @@ class AuditFilterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'action' => 'sometimes|string',
-            'actor_id' => 'sometimes|integer|exists:users,id',
-            'subject_type' => 'sometimes|string',
-            'start_date' => 'sometimes|date',
-            'end_date' => 'sometimes|date|after_or_equal:start_date',
-            'per_page' => 'sometimes|integer|min:1|max:100',
+            'search' => 'nullable|string',
+            'action' => 'nullable|string',
+            'actor_id' => 'nullable|integer|exists:users,id',
+            'subject_type' => 'nullable|string',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
         ];
     }
 }

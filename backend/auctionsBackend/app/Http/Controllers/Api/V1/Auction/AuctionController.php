@@ -29,33 +29,90 @@ class AuctionController extends Controller
     /**
      * GET /api/v1/auctions
      */
-    public function index(AuctionFilterRequest $request): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $auctions = QueryBuilder::for(Auction::class)
-            ->allowedFilters([
-                AllowedFilter::exact('category_id'),
-                AllowedFilter::exact('auction_type'),
-                AllowedFilter::exact('status'),
-                AllowedFilter::exact('condition'),
-                AllowedFilter::exact('currency_code'),
-                AllowedFilter::exact('location_country'),
-                AllowedFilter::callback('price_min', fn ($query, $value) =>
-                    $query->where('current_price', '>=', $value)
-                ),
-                AllowedFilter::callback('price_max', fn ($query, $value) =>
-                    $query->where('current_price', '<=', $value)
-                ),
-                AllowedFilter::callback('ending_soon', fn ($query, $value) =>
-                    $query->where('end_at', '<=', now()->addHours((int) $value))
-                        ->where('end_at', '>=', now())
-                ),
-            ])
-            ->allowedSorts(['end_at', 'current_price', 'total_bids', 'created_at'])
-            ->allowedIncludes(['seller', 'category', 'media'])
-            ->paginate($request->input('per_page', 20));
+        $query = Auction::query()->with(['seller', 'category', 'media']);
 
-        return ApiResponse::success(
-            AuctionResource::collection($auctions)->response()->getData(true),
+        $status = $request->input('status') ?? $request->input('filter.status');
+        if ($status) {
+            $query->where('status', $status);
+        } else {
+            $query->where('status', \App\Enums\AuctionStatus::Active->value);
+        }
+
+        $search = $request->input('search') ?? $request->input('q');
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $category = $request->input('category') ?? $request->input('categoryId') ?? $request->input('filter.category_id');
+        if ($category) {
+            if (is_numeric($category)) {
+                $query->where('category_id', (int) $category);
+            } else {
+                $query->whereHas('category', fn ($q) => $q->where('slug', $category));
+            }
+        }
+
+        $type = $request->input('type') ?? $request->input('auctionType') ?? $request->input('filter.auction_type');
+        if ($type) {
+            $query->where('auction_type', $type);
+        }
+
+        $condition = $request->input('condition') ?? $request->input('filter.condition');
+        if ($condition) {
+            $query->where('condition', $condition);
+        }
+
+        $minPrice = $request->input('minPrice') ?? $request->input('price_min') ?? $request->input('filter.price_min');
+        if ($minPrice !== null && $minPrice !== '') {
+            $query->where('current_price', '>=', (float) $minPrice);
+        }
+
+        $maxPrice = $request->input('maxPrice') ?? $request->input('price_max') ?? $request->input('filter.price_max');
+        if ($maxPrice !== null && $maxPrice !== '') {
+            $query->where('current_price', '<=', (float) $maxPrice);
+        }
+
+        $sort = $request->input('sort', 'ending_soon');
+        switch ($sort) {
+            case 'price_asc':
+            case 'current_price':
+                $query->orderBy('current_price', 'asc');
+                break;
+            case 'price_desc':
+            case '-current_price':
+                $query->orderBy('current_price', 'desc');
+                break;
+            case 'most_bids':
+            case '-total_bids':
+                $query->orderBy('total_bids', 'desc');
+                break;
+            case 'newest':
+            case '-created_at':
+                $query->orderBy('created_at', 'desc');
+                break;
+            case 'ending_soon':
+            case 'end_at':
+            default:
+                $query->orderBy('end_at', 'asc');
+                break;
+        }
+
+        $perPage = (int) ($request->input('perPage') ?? $request->input('per_page') ?? 20);
+        $auctions = $query->paginate($perPage);
+
+        return ApiResponse::paginated(
+            AuctionResource::collection($auctions->items())->resolve(),
+            [
+                'current_page' => $auctions->currentPage(),
+                'last_page' => $auctions->lastPage(),
+                'per_page' => $auctions->perPage(),
+                'total' => $auctions->total(),
+            ],
             'Auctions retrieved'
         );
     }
@@ -68,29 +125,45 @@ class AuctionController extends Controller
         $this->authorize('create', Auction::class);
 
         $dto = new CreateAuctionDTO(
-            title: $request->validated('title'),
-            description: $request->validated('description'),
+            title: (string) $request->validated('title'),
+            description: (string) $request->validated('description'),
             auctionType: AuctionType::from($request->validated('auction_type')),
-            categoryId: $request->validated('category_id'),
-            condition: $request->validated('condition'),
-            locationCountry: $request->validated('location_country'),
-            locationCity: $request->validated('location_city'),
-            currencyCode: $request->validated('currency_code'),
-            startPrice: $request->validated('start_price'),
-            reservePrice: $request->validated('reserve_price'),
-            binPrice: $request->validated('bin_price'),
-            bidIncrementType: $request->validated('bid_increment_type'),
-            bidIncrementValue: $request->validated('bid_increment_value'),
-            depositRequired: $request->validated('deposit_required'),
-            depositAmount: $request->validated('deposit_amount'),
+            categoryId: (int) $request->validated('category_id'),
+            condition: (string) $request->validated('condition'),
+            locationCountry: (string) $request->validated('location_country'),
+            locationCity: (string) $request->validated('location_city'),
+            currencyCode: (string) $request->validated('currency_code'),
+            startPrice: (float) $request->validated('start_price'),
+            reservePrice: $request->validated('reserve_price') !== null ? (float) $request->validated('reserve_price') : null,
+            binPrice: $request->validated('bin_price') !== null ? (float) $request->validated('bin_price') : null,
+            bidIncrementType: (string) $request->validated('bid_increment_type'),
+            bidIncrementValue: (float) $request->validated('bid_increment_value'),
+            depositRequired: (bool) $request->validated('deposit_required'),
+            depositAmount: $request->validated('deposit_amount') !== null ? (float) $request->validated('deposit_amount') : null,
             startAt: Carbon::parse($request->validated('start_at')),
             endAt: Carbon::parse($request->validated('end_at')),
-            antiSnipeMinutes: $request->validated('anti_snipe_minutes'),
-            antiSnipeExtendMinutes: $request->validated('anti_snipe_extend_minutes'),
-            maxExtensionMinutes: $request->validated('max_extension_minutes'),
+            antiSnipeMinutes: (int) $request->validated('anti_snipe_minutes'),
+            antiSnipeExtendMinutes: (int) $request->validated('anti_snipe_extend_minutes'),
+            maxExtensionMinutes: (int) $request->validated('max_extension_minutes'),
         );
 
         $auction = $this->auctionService->create($dto, $request->user());
+
+        \App\Models\AuditLog::create([
+            'actor_id' => $request->user()?->id,
+            'action' => 'auction.created',
+            'subject_type' => Auction::class,
+            'subject_id' => $auction->id,
+            'old_values' => null,
+            'new_values' => [
+                'uuid' => $auction->uuid,
+                'title' => $auction->title,
+                'start_price' => $auction->start_price,
+                'status' => $auction->status instanceof \BackedEnum ? $auction->status->value : (string) $auction->status,
+            ],
+            'ip_address' => $request->ip() ?? '127.0.0.1',
+            'user_agent' => $request->userAgent() ?? 'Web Browser',
+        ]);
 
         return ApiResponse::success(
             new AuctionResource($auction),
@@ -148,15 +221,26 @@ class AuctionController extends Controller
     {
         $this->authorize('update', $auction);
 
+        $files = $request->file('files')
+            ?? $request->file('media')
+            ?? ($request->hasFile('file') ? [$request->file('file')] : []);
+        if (empty($files)) {
+            return ApiResponse::error('No files uploaded', 422);
+        }
+
         $dto = new MediaUploadDTO(
             auctionId: $auction->uuid,
-            files: $request->file('files'),
+            files: $files,
             isPrimary: (bool) $request->validated('is_primary', false)
         );
 
         $uploaded = $this->auctionService->uploadMedia($dto);
 
-        return ApiResponse::success($uploaded->toArray(), 'Media uploaded', 201);
+        return ApiResponse::success(
+            \App\Http\Resources\Auction\AuctionMediaResource::collection($uploaded)->resolve(),
+            'Media uploaded',
+            201
+        );
     }
 
     /**
@@ -178,7 +262,23 @@ class AuctionController extends Controller
     {
         $this->authorize('update', $auction);
 
+        $oldStatus = $auction->status instanceof \BackedEnum ? $auction->status->value : (string) $auction->status;
         $auction = $this->auctionService->submitForReview($auction, request()->user());
+
+        \App\Models\AuditLog::create([
+            'actor_id' => request()->user()?->id,
+            'action' => 'auction.submitted',
+            'subject_type' => Auction::class,
+            'subject_id' => $auction->id,
+            'old_values' => ['status' => $oldStatus],
+            'new_values' => [
+                'uuid' => $auction->uuid,
+                'title' => $auction->title,
+                'status' => $auction->status instanceof \BackedEnum ? $auction->status->value : (string) $auction->status,
+            ],
+            'ip_address' => request()->ip() ?? '127.0.0.1',
+            'user_agent' => request()->userAgent() ?? 'Web Browser',
+        ]);
 
         return ApiResponse::success(
             new AuctionResource($auction),
@@ -195,9 +295,15 @@ class AuctionController extends Controller
         $user = $request->user();
         $watching = $user->watchedAuctions()->toggle($auction->id);
         $isWatching = in_array($auction->id, $watching['attached']);
+        $watchersCount = $auction->watchers()->count();
 
         return ApiResponse::success(
-            ['is_watching' => $isWatching],
+            [
+                'isWatched' => $isWatching,
+                'is_watching' => $isWatching,
+                'watchersCount' => $watchersCount,
+                'watchers_count' => $watchersCount,
+            ],
             $isWatching ? 'Auction added to watchlist' : 'Auction removed from watchlist'
         );
     }
