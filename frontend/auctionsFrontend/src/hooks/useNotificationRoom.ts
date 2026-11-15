@@ -1,14 +1,9 @@
-import { useEffect, useRef, useCallback } from 'react';
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js';
+import { useEffect, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/hooks/useRedux';
 import { selectCurrentUser } from '@/store/slices/authSlice';
 import { addNotification } from '@/store/slices/notificationsSlice';
+import { getEcho } from '@/lib/echo';
 import type { AppNotification } from '@/types';
-
-if (typeof window !== 'undefined') {
-  (window as any).Pusher = Pusher;
-}
 
 /**
  * Plays a subtle notification chime using the Web Audio API.
@@ -38,7 +33,6 @@ function playNotificationChime() {
 export function useNotificationRoom() {
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectCurrentUser);
-  const echoRef = useRef<Echo<any> | null>(null);
 
   const handleNewNotification = useCallback(
     (notification: AppNotification) => {
@@ -49,31 +43,22 @@ export function useNotificationRoom() {
   );
 
   useEffect(() => {
-    if (!user?.uuid) return;
+    const channelId = user?.id || user?.uuid;
+    if (!channelId) return;
 
-    const echo = new Echo({
-      broadcaster: 'pusher',
-      key: import.meta.env.VITE_PUSHER_APP_KEY || 'app-key',
-      cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER || 'mt1',
-      forceTLS: true,
-      authEndpoint: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/broadcasting/auth`,
-      auth: {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      },
-    });
-
-    echoRef.current = echo;
+    const echo = getEcho();
+    if (!echo) return;
 
     echo
-      .private(`notifications.${user.uuid}`)
+      .private(`notifications.${channelId}`)
       .listen('.NewNotification', handleNewNotification);
 
     return () => {
-      echo.leave(`notifications.${user.uuid}`);
-      echo.disconnect();
-      echoRef.current = null;
+      try {
+        echo.leave(`notifications.${channelId}`);
+      } catch {
+        // ignore
+      }
     };
-  }, [user?.uuid, handleNewNotification]);
+  }, [user?.id, user?.uuid, handleNewNotification]);
 }

@@ -39,7 +39,7 @@ export function AuthLayout() {
         </motion.div>
 
         {/* Social proof */}
-        <div className="flex gap-8 text-sm text-white/40">
+        {/* <div className="flex gap-8 text-sm text-white/40">
           <div>
             <span className="block font-display text-2xl font-bold text-white">12k+</span>
             Active Users
@@ -52,7 +52,7 @@ export function AuthLayout() {
             <span className="block font-display text-2xl font-bold text-white">98%</span>
             Satisfaction
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* ─── Right panel: auth forms ─── */}

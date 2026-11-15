@@ -11,6 +11,7 @@ export interface AdminDashboardStats {
   bidsPerMinuteTrend: number;
   pendingKyc: number;
   pendingKycTrend: number;
+  pendingAuctions?: number;
   openDisputes: number;
   openDisputesTrend: number;
 }
@@ -50,6 +51,14 @@ export interface UserDetail extends AdminUserResource {
   phone: string | null;
   loginHistory: LoginHistoryEntry[];
   activeBids: UserBidSummary[];
+  listings?: Array<{
+    uuid: string;
+    title: string;
+    status: string;
+    currentPrice: number;
+    totalBids: number;
+    createdAt: string;
+  }>;
   transactionSummary: {
     totalSpent: number;
     totalEarned: number;

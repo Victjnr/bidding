@@ -1,17 +1,16 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppSelector } from '@/hooks/useRedux';
-import { selectIsAuthenticated } from '@/store/slices/authSlice';
-
-/* ═══════════════════════════════════════════════════
-   RequireAuth Guard
-   ─────────────────────────────────────────────────
-   Redirects unauthenticated users to /auth/login
-   while preserving the intended destination.
-   ═══════════════════════════════════════════════════ */
+import { selectIsAuthenticated, selectAuthLoading } from '@/store/slices/authSlice';
+import { FullPageLoader } from '@/components/layout/FullPageLoader';
 
 export function RequireAuth() {
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const isLoading = useAppSelector(selectAuthLoading);
   const location = useLocation();
+
+  if (isLoading) {
+    return <FullPageLoader />;
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/auth/login" state={{ from: location }} replace />;

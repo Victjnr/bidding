@@ -9,50 +9,17 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AuctionType } from '@/types/auction';
+import { useGetDropdownOptionsQuery } from '@/store/api/auctionApi';
 
-const AUCTION_TYPES: {
-  value: AuctionType;
-  label: string;
-  description: string;
-  icon: React.ElementType;
-}[] = [
-  {
-    value: 'forward',
-    label: 'Forward (English)',
-    description: 'Classic ascending-price auction. The highest bidder wins when time expires.',
-    icon: ArrowUpRight,
-  },
-  {
-    value: 'reverse',
-    label: 'Reverse (Dutch)',
-    description: 'Price starts high and drops over time. First bidder to accept the price wins.',
-    icon: ArrowDownRight,
-  },
-  {
-    value: 'sealed',
-    label: 'Sealed Bid',
-    description: 'All bids are hidden. The highest bidder is revealed only when the auction closes.',
-    icon: Lock,
-  },
-  {
-    value: 'penny',
-    label: 'Penny Auction',
-    description: 'Each bid raises the price by a small increment. Every bid costs a token.',
-    icon: Coins,
-  },
-  {
-    value: 'bin',
-    label: 'Buy It Now',
-    description: 'Fixed-price listing. The first buyer to pay the listed price wins immediately.',
-    icon: ShoppingCart,
-  },
-  {
-    value: 'live',
-    label: 'Live Auction',
-    description: 'Real-time auctioneer-led session with live bidding via video and chat.',
-    icon: Radio,
-  },
-];
+// Icon mapping string to component
+const ICON_MAP: Record<string, React.ElementType> = {
+  ArrowUpRight,
+  ArrowDownRight,
+  Lock,
+  Coins,
+  ShoppingCart,
+  Radio,
+};
 
 interface TypeSelectorProps {
   selected: AuctionType | null;
@@ -60,6 +27,9 @@ interface TypeSelectorProps {
 }
 
 export function TypeSelector({ selected, onSelect }: TypeSelectorProps) {
+  const { data: optionsData } = useGetDropdownOptionsQuery();
+  const dynamicAuctionTypes = optionsData?.data?.auctionTypes || [];
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="text-center">
@@ -70,8 +40,8 @@ export function TypeSelector({ selected, onSelect }: TypeSelectorProps) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {AUCTION_TYPES.map((type) => {
-          const Icon = type.icon;
+        {dynamicAuctionTypes.map((type: any) => {
+          const Icon = ICON_MAP[type.icon] || ArrowUpRight;
           const isSelected = selected === type.value;
 
           return (

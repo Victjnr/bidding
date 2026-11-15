@@ -1,4 +1,5 @@
 import type { AuctionType } from '@/types/auction';
+import { useGetDropdownOptionsQuery } from '@/store/api/auctionApi';
 
 interface PricingProps {
   auctionType: AuctionType;
@@ -22,8 +23,6 @@ interface PricingProps {
   }>) => void;
 }
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'ZAR', 'AUD', 'CAD'];
-
 export function Pricing({
   auctionType,
   startPrice,
@@ -36,6 +35,9 @@ export function Pricing({
   currency,
   onChange,
 }: PricingProps) {
+  const { data: optionsData } = useGetDropdownOptionsQuery();
+  const dynamicCurrencies = optionsData?.data?.currencies || [];
+
   const showStartPrice = auctionType !== 'bin';
   const showReserve = auctionType === 'forward' || auctionType === 'live';
   const showBin = auctionType === 'forward';
@@ -59,8 +61,10 @@ export function Pricing({
           onChange={(e) => onChange({ currency: e.target.value })}
           className="input"
         >
-          {CURRENCIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+          {dynamicCurrencies.map((c: any) => (
+            <option key={c.code} value={c.code}>
+              {c.code} - {c.name}
+            </option>
           ))}
         </select>
       </div>

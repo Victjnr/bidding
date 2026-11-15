@@ -176,7 +176,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Pagination */}
-      {data && data.meta.last_page > 1 && (
+      {data && data.meta.lastPage > 1 && (
         <div className="flex justify-between items-center pt-4">
           <button
             disabled={page === 1}

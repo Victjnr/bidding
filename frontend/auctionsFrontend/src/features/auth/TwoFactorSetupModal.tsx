@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check, X, ShieldCheck, Loader2 } from 'lucide-react';
@@ -20,15 +20,17 @@ export function TwoFactorSetupModal({ isOpen, onClose, onSuccess }: Props) {
   const [confirm2FA, { isLoading: isConfirming, error }] = useConfirm2FAMutation();
 
   // Fetch QR on open
-  useState(() => {
+  useEffect(() => {
     if (isOpen) {
       enable2FA();
       setStep(1);
       setOtp(['', '', '', '', '', '']);
     }
-  });
+  }, [isOpen, enable2FA]);
 
   if (!isOpen) return null;
+
+  const qrUrl = setupData?.qrCodeUrl || setupData?.qr_code_url;
 
   const handleCopy = () => {
     if (setupData?.secret) {
@@ -108,12 +110,12 @@ export function TwoFactorSetupModal({ isOpen, onClose, onSuccess }: Props) {
                 <p className="text-sm text-muted">
                   Scan this QR code with your authenticator app (like Google Authenticator or Authy).
                 </p>
-                
+
                 <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-lg bg-sky p-4 shadow-inner">
                   {isEnabling ? (
                     <Loader2 className="h-8 w-8 animate-spin text-orange" />
-                  ) : setupData?.qrCodeUrl ? (
-                    <QRCodeSVG value={setupData.qrCodeUrl} size={160} level="M" />
+                  ) : qrUrl ? (
+                    <QRCodeSVG value={qrUrl} size={160} level="M" />
                   ) : (
                     <span className="text-sm text-error">Failed to load QR code</span>
                   )}

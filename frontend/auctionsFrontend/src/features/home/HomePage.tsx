@@ -1,24 +1,64 @@
 import { useState, useEffect } from 'react';
 import { motion, useAnimation, useInView } from 'framer-motion';
 import { useRef } from 'react';
-import { Search, Gavel, Users, DollarSign, ArrowRight, Laptop, Home, Car, Shirt, Heart, Book, Coffee, Grid } from 'lucide-react';
+import { Search, Gavel, Users, DollarSign, ArrowRight, Laptop, Home, Car, Shirt, Heart, Book, Coffee, Grid, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useListAuctionsQuery } from '@/store/api/auctionApi';
+import { useListAuctionsQuery, useGetCategoriesQuery } from '@/store/api/auctionApi';
 import { useAppSelector } from '@/hooks/useRedux';
 import { selectIsAuthenticated } from '@/store/slices/authSlice';
 import { AuctionCard } from '@/components/shared/AuctionCard';
 import { GlobalSearchBar } from '@/components/layout/GlobalSearchBar';
 
-const CATEGORIES = [
-  { id: 'electronics', name: 'Electronics', icon: <Laptop className="h-6 w-6" />, count: '2.4k+' },
-  { id: 'real-estate', name: 'Real Estate', icon: <Home className="h-6 w-6" />, count: '850+' },
-  { id: 'vehicles', name: 'Vehicles', icon: <Car className="h-6 w-6" />, count: '1.2k+' },
-  { id: 'fashion', name: 'Fashion', icon: <Shirt className="h-6 w-6" />, count: '5k+' },
-  { id: 'health-beauty', name: 'Health & Beauty', icon: <Heart className="h-6 w-6" />, count: '3.1k+' },
-  { id: 'books-media', name: 'Books & Media', icon: <Book className="h-6 w-6" />, count: '10k+' },
-  { id: 'home-garden', name: 'Home & Garden', icon: <Coffee className="h-6 w-6" />, count: '4.2k+' },
-  { id: 'all', name: 'All Categories', icon: <Grid className="h-6 w-6" />, count: 'Browse All' },
-];
+// Icon mapping for categories
+const CATEGORY_ICONS: Record<string, any> = {
+  'electronics': Laptop,
+  'real-estate': Home,
+  'vehicles': Car,
+  'fashion': Shirt,
+  'health-beauty': Heart,
+  'books-media': Book,
+  'home-garden': Coffee,
+  'jewelry': Package,
+  'sports': Package,
+  'collectibles': Package,
+};
+
+// Category Auctions Grid Component
+function CategoryAuctionsGrid({ category }: { category: any }) {
+  const { data: categoryAuctions, isLoading } = useListAuctionsQuery({ 
+    limit: 4, 
+    category: category.slug 
+  });
+
+  if (isLoading) {
+    return (
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-64 rounded-2xl bg-white animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  const auctions = Array.isArray(categoryAuctions?.data) ? categoryAuctions.data : [];
+  
+  if (auctions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl bg-white p-12 text-center">
+        <Package className="h-12 w-12 text-muted mb-4" />
+        <p className="text-muted">No listings in this category yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {auctions.map((auction: any) => (
+        <AuctionCard key={auction.uuid} auction={auction} variant="grid" />
+      ))}
+    </div>
+  );
+}
 
 function AnimatedCounter({ end, prefix = '', suffix = '', decimals = 0 }: { end: number, prefix?: string, suffix?: string, decimals?: number }) {
   const [count, setCount] = useState(0);
@@ -57,10 +97,16 @@ export function HomePage() {
   const navigate = useNavigate();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   
+  // Fetch categories from API
+  const { data: categoriesData, isLoading: isCategoriesLoading } = useGetCategoriesQuery();
+  
   // Fetch a few auctions for the "Ending Soon" section
   const { data: featuredData, isLoading: isFeaturedLoading } = useListAuctionsQuery({ limit: 4, sortBy: 'ending_soonest' });
   const { data: trendingData, isLoading: isTrendingLoading } = useListAuctionsQuery({ limit: 8, sortBy: 'bids_desc' });
   const { data: endingData, isLoading: isEndingLoading } = useListAuctionsQuery({ limit: 4, sortBy: 'ending_soonest' });
+
+  // Extract categories from API response
+  const categories = Array.isArray(categoriesData?.data) ? categoriesData.data : [];
 
   return (
     <div className="space-y-16 pb-16">
@@ -140,26 +186,37 @@ export function HomePage() {
         <div className="mb-8 flex items-end justify-between">
           <div>
             <h2 className="font-display text-2xl font-bold text-ink">Explore Categories</h2>
-            <p className="text-muted mt-1">Find exactly what you're looking for.</p>
+            <p className="text-muted mt-1">Find exactly what you're looking for across thousands of listings.</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4">
-          {CATEGORIES.map((category) => (
-            <button
-              key={category.id}
-              onClick={() => navigate(`/app/search?category=${category.id}`)}
-              className="group flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:border-orange/50 hover:shadow-md"
-            >
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-sky text-navy transition-colors group-hover:bg-orange group-hover:text-white">
-                {category.icon}
-              </div>
-              <div>
-                <h3 className="font-semibold text-ink group-hover:text-orange transition-colors">{category.name}</h3>
-                <p className="text-xs text-muted">{category.count}</p>
-              </div>
-            </button>
-          ))}
-        </div>
+        {isCategoriesLoading ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="h-32 rounded-2xl bg-white animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4">
+            {categories.map((category: any) => {
+              const IconComponent = CATEGORY_ICONS[category.slug?.toLowerCase()] || Package;
+              return (
+                <button
+                  key={category.id}
+                  onClick={() => navigate(`/app/search?category=${category.slug}`)}
+                  className="group flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:border-orange/50 hover:shadow-md"
+                >
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-sky text-navy transition-colors group-hover:bg-orange group-hover:text-white">
+                    <IconComponent className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-ink group-hover:text-orange transition-colors">{category.name}</h3>
+                    <p className="text-xs text-muted">{category.auction_count || 0} listings</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Featured Auctions */}
@@ -182,6 +239,25 @@ export function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* Category Auctions Sections */}
+      {categories.slice(0, 3).map((category: any) => (
+        <section key={category.id}>
+          <div className="mb-8 flex items-end justify-between">
+            <div>
+              <h2 className="font-display text-2xl font-bold text-ink">{category.name}</h2>
+              <p className="text-muted mt-1">{category.auction_count || 0} listings available</p>
+            </div>
+            <button 
+              onClick={() => navigate(`/app/search?category=${category.slug}`)}
+              className="hidden sm:flex text-sm font-medium text-orange hover:text-orange/80 items-center gap-1 transition-colors"
+            >
+              View all <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+          <CategoryAuctionsGrid category={category} />
+        </section>
+      ))}
 
       {/* Ending Soon */}
       <section className="rounded-3xl bg-orange/5 p-8 border border-orange/10">

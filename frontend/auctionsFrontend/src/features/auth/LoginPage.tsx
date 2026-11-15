@@ -12,12 +12,14 @@ import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const [verify2FA] = useVerify2FAMutation();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as any)?.from?.pathname || '/app';
 
   const [showPassword, setShowPassword] = useState(false);
   const [requires2FA, setRequires2FA] = useState(false);
+  const [pendingUserId, setPendingUserId] = useState<string | number | undefined>(undefined);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -25,7 +27,6 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
-    watch,
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -39,16 +40,26 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      const response = await login(data as LoginCredentials);
-      if (response.requires_2fa && !data.two_factor_code) {
-        setRequires2FA(true);
-        setIsSubmitting(false);
-        return;
+      let response: any;
+      if (requires2FA && data.two_factor_code) {
+        response = await verify2FA({
+          code: data.two_factor_code,
+          email: data.email,
+          user_id: pendingUserId,
+        }).unwrap();
+      } else {
+        response = await login(data as LoginCredentials);
+        if (response.requires_2fa) {
+          setRequires2FA(true);
+          setPendingUserId(response.user_id);
+          setIsSubmitting(false);
+          return;
+        }
       }
-      
+
       const roles = response.user?.roles || [];
       const isAdmin = roles.includes('admin') || roles.includes('super_admin');
-      
+
       if (isAdmin && from === '/app') {
         navigate('/app/admin', { replace: true });
       } else {
@@ -56,7 +67,7 @@ export default function LoginPage() {
       }
     } catch (error: any) {
       setErrorMsg(
-        error?.data?.message || 'Invalid email or password. Please try again.'
+        error?.data?.message || 'Invalid credentials or verification code. Please try again.'
       );
     } finally {
       setIsSubmitting(false);
@@ -71,10 +82,10 @@ export default function LoginPage() {
       </div>
 
       {/* Added an error callback to handleSubmit to catch silent Zod errors in the console */}
-      <form 
+      <form
         onSubmit={handleSubmit(onSubmit, (validationErrors) => {
           console.error("Zod Validation Errors:", validationErrors);
-        })} 
+        })}
         className="space-y-5"
       >
         <motion.div

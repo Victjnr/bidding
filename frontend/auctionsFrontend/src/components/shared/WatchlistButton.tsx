@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
-// import { useToggleWatchlistMutation } from '@/store/api/auctionApi';
+import { useToggleWatchlistMutation } from '@/store/api/auctionApi';
 
 interface WatchlistButtonProps {
   auctionUuid: string;
@@ -10,20 +10,24 @@ interface WatchlistButtonProps {
 }
 
 export function WatchlistButton({ auctionUuid, initialCount = 0, initialIsWatched = false }: WatchlistButtonProps) {
-  // const [toggleWatchlist] = useToggleWatchlistMutation();
+  const [toggleWatchlist] = useToggleWatchlistMutation();
   const [isWatched, setIsWatched] = useState(initialIsWatched);
   const [count, setCount] = useState(initialCount);
 
   const handleToggle = async () => {
-    // Optimistic UI update
     const newIsWatched = !isWatched;
     setIsWatched(newIsWatched);
-    setCount((c) => (newIsWatched ? c + 1 : c - 1));
+    setCount((c) => (newIsWatched ? c + 1 : Math.max(0, c - 1)));
 
     try {
-      // await toggleWatchlist(auctionUuid).unwrap();
+      const res = await toggleWatchlist(auctionUuid).unwrap();
+      if (typeof res?.isWatched === 'boolean') {
+        setIsWatched(res.isWatched);
+      }
+      if (typeof res?.watchersCount === 'number') {
+        setCount(res.watchersCount);
+      }
     } catch {
-      // Revert on failure
       setIsWatched(isWatched);
       setCount(count);
     }

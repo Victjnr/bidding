@@ -109,7 +109,7 @@ export default function SecurityPage() {
             <h3 className="font-display font-bold text-ink">Active Sessions</h3>
           </div>
           <div className="p-6 space-y-4 flex-1">
-            {sessions?.map(session => (
+            {Array.isArray(sessions) && sessions.length > 0 ? sessions.map(session => (
               <div key={session.id} className="flex items-start justify-between p-3 rounded-lg border border-border bg-sky/30">
                 <div className="flex gap-3">
                   <div className="mt-0.5 text-muted">
@@ -130,7 +130,9 @@ export default function SecurityPage() {
                   </button>
                 )}
               </div>
-            ))}
+            )) : (
+              <div className="text-center py-6 text-sm text-muted">No active sessions found.</div>
+            )}
           </div>
         </div>
       </div>
@@ -152,7 +154,7 @@ export default function SecurityPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {history?.map(entry => (
+              {Array.isArray(history) && history.length > 0 ? history.map(entry => (
                 <tr key={entry.id}>
                   <td className="px-6 py-3">
                     {entry.success ? (
@@ -165,7 +167,9 @@ export default function SecurityPage() {
                   <td className="px-6 py-3 font-medium text-ink">{entry.device}</td>
                   <td className="px-6 py-3 text-muted font-mono text-xs">{entry.ip}</td>
                 </tr>
-              ))}
+              )) : (
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-muted">No login history available.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

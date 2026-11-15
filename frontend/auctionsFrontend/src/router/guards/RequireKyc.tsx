@@ -20,7 +20,15 @@ export function RequireKyc({ minTier }: RequireKycProps) {
     return <Navigate to="/auth/login" replace />;
   }
 
-  if (user.kycTier < minTier) {
+  const rawTier = (user as any).kycTier ?? (user as any).kyc_tier ?? 0;
+  const numericTier =
+    typeof rawTier === 'number'
+      ? rawTier
+      : typeof rawTier === 'string' && rawTier.startsWith('tier_')
+      ? parseInt(rawTier.replace('tier_', ''), 10) || 0
+      : Number(rawTier) || 0;
+
+  if (numericTier < minTier) {
     return <Navigate to="/app/kyc-required" replace />;
   }
 

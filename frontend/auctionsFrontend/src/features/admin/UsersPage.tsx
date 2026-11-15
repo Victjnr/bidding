@@ -1,11 +1,12 @@
-import { useState, useCallback } from 'react';
-import { Search, MoreHorizontal, Eye, Ban, UserX, UserCheck, X, Shield, Clock, CreditCard, Gavel } from 'lucide-react';
-import { useGetAdminUsersQuery, useGetAdminUserDetailQuery, useSuspendUserMutation, useBanUserMutation } from '@/store/api/adminApi';
-import { formatDistanceToNow, format } from 'date-fns';
+import { useState } from 'react';
+import { Search, MoreHorizontal, Eye, Ban, UserX, UserCheck, X, Shield, Clock, CreditCard, Gavel, Package } from 'lucide-react';
+import { useGetAdminUsersQuery, useGetAdminUserDetailQuery, useSuspendUserMutation, useBanUserMutation, useActivateUserMutation } from '@/store/api/adminApi';
+import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { AdminUserResource, KycTier, AdminUserStatus } from '@/types/admin';
+import toast from 'react-hot-toast';
+import type { KycTier, AdminUserStatus } from '@/types/admin';
 
 export default function UsersPage() {
   const [page, setPage] = useState(1);
@@ -18,6 +19,7 @@ export default function UsersPage() {
   const { data: users, isLoading } = useGetAdminUsersQuery({ page, search, status: statusFilter, kycTier: kycFilter, role: roleFilter });
   const [suspendUser] = useSuspendUserMutation();
   const [banUser] = useBanUserMutation();
+  const [activateUser] = useActivateUserMutation();
 
   const getStatusBadge = (status: AdminUserStatus) => {
     switch (status) {
@@ -150,13 +152,18 @@ export default function UsersPage() {
                               <Eye className="h-4 w-4 text-white/30" /> View Details
                             </DropdownMenu.Item>
                             <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
+                            {user.status !== 'active' && (
+                              <DropdownMenu.Item onSelect={() => activateUser(user.uuid).unwrap().then(() => toast.success('User activated'))} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-emerald-400 hover:bg-emerald-400/10 cursor-pointer outline-none">
+                                <UserCheck className="h-4 w-4" /> Activate User
+                              </DropdownMenu.Item>
+                            )}
                             {user.status === 'active' && (
-                              <DropdownMenu.Item onSelect={() => suspendUser(user.uuid)} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-amber-400 hover:bg-amber-400/10 cursor-pointer outline-none">
+                              <DropdownMenu.Item onSelect={() => suspendUser(user.uuid).unwrap().then(() => toast.success('User suspended'))} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-amber-400 hover:bg-amber-400/10 cursor-pointer outline-none">
                                 <UserX className="h-4 w-4" /> Suspend
                               </DropdownMenu.Item>
                             )}
                             {user.status !== 'banned' && (
-                              <DropdownMenu.Item onSelect={() => banUser(user.uuid)} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 cursor-pointer outline-none">
+                              <DropdownMenu.Item onSelect={() => banUser(user.uuid).unwrap().then(() => toast.success('User banned'))} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 cursor-pointer outline-none">
                                 <Ban className="h-4 w-4" /> Ban User
                               </DropdownMenu.Item>
                             )}
@@ -271,6 +278,30 @@ function UserDetailDrawer({ uuid, onClose }: { uuid: string; onClose: () => void
                 ))}
               </div>
             </div>
+
+            {/* User Created Listings */}
+            {user.listings && (
+              <div>
+                <h4 className="font-bold text-sm text-white/60 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Package className="h-4 w-4" /> Created Auctions ({user.listings.length})
+                </h4>
+                <div className="space-y-2">
+                  {user.listings.length === 0 ? (
+                    <p className="text-xs text-white/20 text-center py-4">No auctions created yet.</p>
+                  ) : (
+                    user.listings.map((listing) => (
+                      <div key={listing.uuid} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-4 py-2.5 border border-white/5">
+                        <div>
+                          <p className="text-xs text-white/80 font-medium truncate max-w-[200px]">{listing.title}</p>
+                          <p className="text-[10px] text-white/30 uppercase">{listing.status} · {listing.totalBids} bids</p>
+                        </div>
+                        <span className="text-xs font-bold text-orange">${listing.currentPrice.toLocaleString()}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Active Bids */}
             <div>

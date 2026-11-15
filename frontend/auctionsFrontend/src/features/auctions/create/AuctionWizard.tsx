@@ -9,7 +9,8 @@ import { MediaUpload, type MediaItem } from './steps/MediaUpload';
 import { Pricing } from './steps/Pricing';
 import { Schedule } from './steps/Schedule';
 import { ReviewSubmit } from './steps/ReviewSubmit';
-import { useCreateAuctionMutation, useSubmitForReviewMutation } from '@/store/api/auctionApi';
+import { useCreateAuctionMutation, useSubmitForReviewMutation, useUploadMediaMutation } from '@/store/api/auctionApi';
+import toast from 'react-hot-toast';
 import type { AuctionType } from '@/types/auction';
 
 /* ═══════════════════════════════════════════════════
@@ -125,6 +126,7 @@ export default function AuctionWizard() {
 
   const [createAuction] = useCreateAuctionMutation();
   const [submitForReview] = useSubmitForReviewMutation();
+  const [uploadMedia] = useUploadMediaMutation();
 
   // Persist to sessionStorage on every change (excluding media/File objects)
   useEffect(() => {
@@ -167,10 +169,10 @@ export default function AuctionWizard() {
 
       if (state.reserveEnabled) payload.reserve_price = Number(state.reservePrice);
       if (state.binEnabled || state.auctionType === 'bin') payload.bin_price = Number(state.binPrice);
-      
+
       payload.bid_increment_type = state.bidIncrementType === 'percentage' ? 'percentage' : 'static';
       payload.bid_increment_value = Number(state.bidIncrement) || 0;
-      
+
       payload.anti_snipe_minutes = state.antiSnipeEnabled ? Number(state.antiSnipeMinutes) : 0;
       payload.anti_snipe_extend_minutes = state.antiSnipeEnabled ? Number(state.antiSnipeMinutes) : 0;
       payload.max_extension_minutes = 60; // default
@@ -181,16 +183,28 @@ export default function AuctionWizard() {
 
       // Upload media if present
       if (state.media.length > 0) {
-        // Media upload would happen via a separate endpoint per the auctionApi
-        // For now we trust the API flow — the real upload will use useUploadMediaMutation
+        const formData = new FormData();
+        let hasFiles = false;
+        state.media.forEach((m) => {
+          if (m.file) {
+            formData.append('files[]', m.file);
+            hasFiles = true;
+          }
+        });
+
+        if (hasFiles) {
+          await uploadMedia({ uuid: auction.uuid, files: formData }).unwrap();
+        }
       }
 
       await submitForReview(auction.uuid).unwrap();
 
       sessionStorage.removeItem(SESSION_KEY);
+      toast.success('Auction submitted for review! An administrator will review your listing.');
       navigate(`/app/auctions/${auction.uuid}`, { replace: true });
-    } catch {
-      // Error handling would use toast notifications in production
+    } catch (err: any) {
+      const msg = err?.data?.message || 'Failed to submit auction. Please check your details and try again.';
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -201,7 +215,12 @@ export default function AuctionWizard() {
       case 1:
         return state.auctionType !== null;
       case 2:
-        return state.title.trim().length > 0 && state.condition !== '';
+        return (
+          state.title.trim().length > 0 &&
+          state.condition !== '' &&
+          state.category !== '' &&
+          state.location.trim().length > 0
+        );
       case 3:
         return true; // Media is optional
       case 4:

@@ -144,23 +144,23 @@ export function AdminLayout() {
       {/* Main Area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Admin Topbar */}
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/5 bg-[#0A1628] px-6">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-white/60">Admin Panel</h2>
+        <header className="flex h-14 sm:h-16 shrink-0 items-center justify-between border-b border-white/5 bg-[#0A1628] px-3 sm:px-6 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <h2 className="text-xs sm:text-sm font-medium text-white/60 whitespace-nowrap">Admin Panel</h2>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <NotificationBell />
-            <div className="flex items-center gap-2 text-white/70">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange/20 text-xs font-bold text-orange">
+            <div className="flex items-center gap-2 text-white/70 min-w-0">
+              <div className="flex h-7 sm:h-8 w-7 sm:w-8 items-center justify-center rounded-full bg-orange/20 text-xs font-bold text-orange flex-shrink-0">
                 {user?.displayName?.charAt(0).toUpperCase() ?? 'A'}
               </div>
-              <span className="text-sm font-medium hidden lg:block">{user?.displayName}</span>
+              <span className="text-xs sm:text-sm font-medium hidden lg:block truncate">{user?.displayName}</span>
             </div>
           </div>
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto bg-[#0D1A2D] p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto bg-[#0D1A2D] p-3 sm:p-6 lg:p-8">
           <Suspense fallback={<div className="flex h-64 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-orange border-t-transparent" /></div>}>
             <Outlet />
           </Suspense>

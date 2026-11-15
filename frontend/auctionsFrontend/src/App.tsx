@@ -3,7 +3,7 @@ import { RouterProvider } from 'react-router-dom';
 import { router } from '@/router';
 import { useAppDispatch, useAppSelector } from '@/hooks/useRedux';
 import { authApi } from '@/store/api/authApi';
-import { selectIsAuthenticated } from '@/store/slices/authSlice';
+import { selectIsAuthenticated, setLoading } from '@/store/slices/authSlice';
 import { setupEcho, disconnectEcho } from '@/lib/echo';
 import { Toaster } from 'react-hot-toast';
 import { HelmetProvider } from 'react-helmet-async';
@@ -16,8 +16,12 @@ function AppInitializer() {
 
   // Initial boot sequence
   useEffect(() => {
-    // Attempt to fetch user if we have a token or just on boot
-    dispatch(authApi.endpoints.getCurrentUser.initiate());
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      dispatch(authApi.endpoints.getCurrentUser.initiate());
+    } else {
+      dispatch(setLoading(false));
+    }
   }, [dispatch]);
 
   // Handle Echo WebSocket connection lifecycle
@@ -42,7 +46,7 @@ export default function App() {
       <ErrorBoundary>
         <AppInitializer />
       </ErrorBoundary>
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           className: 'font-sans text-sm font-medium shadow-xl',

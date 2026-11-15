@@ -9,8 +9,15 @@ import { setCredentials, clearCredentials } from '../slices/authSlice';
 interface LoginResponse {
   user: AuthUser;
   access_token: string;
+  refresh_token?: string;
   requires_2fa?: boolean;
+  user_id?: number | string;
 }
+
+const unwrapData = (response: any) =>
+  response && typeof response === 'object' && 'data' in response && response.status === 'success'
+    ? response.data
+    : response;
 
 export const authApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -20,14 +27,16 @@ export const authApi = baseApi.injectEndpoints({
         method: 'POST',
         body: credentials,
       }),
+      transformResponse: unwrapData,
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
-          const { data } = await queryFulfilled;
-          if (!data.requires_2fa) {
+          const { data: payload } = await queryFulfilled;
+          if (!payload.requires_2fa && payload.access_token) {
             dispatch(
               setCredentials({
-                user: data.user,
-                accessToken: data.access_token,
+                user: payload.user,
+                accessToken: payload.access_token,
+                refreshToken: payload.refresh_token,
               }),
             );
           }
@@ -37,19 +46,21 @@ export const authApi = baseApi.injectEndpoints({
       },
     }),
 
-    register: builder.mutation<{ user: AuthUser; access_token: string }, RegisterPayload>({
+    register: builder.mutation<{ user: AuthUser; access_token: string; refresh_token?: string }, RegisterPayload>({
       query: (payload) => ({
         url: '/auth/register',
         method: 'POST',
         body: payload,
       }),
+      transformResponse: unwrapData,
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
-          const { data } = await queryFulfilled;
+          const { data: payload } = await queryFulfilled;
           dispatch(
             setCredentials({
-              user: data.user,
-              accessToken: data.access_token,
+              user: payload.user,
+              accessToken: payload.access_token,
+              refreshToken: payload.refresh_token,
             }),
           );
         } catch {
@@ -68,13 +79,12 @@ export const authApi = baseApi.injectEndpoints({
           await queryFulfilled;
           dispatch(clearCredentials());
         } catch {
-          // Still clear locally even if network fails
           dispatch(clearCredentials());
         }
       },
     }),
 
-    refreshToken: builder.mutation<{ access_token: string }, void>({
+    refreshToken: builder.mutation<{ access_token: string; refresh_token?: string }, void>({
       query: () => ({
         url: '/auth/refresh',
         method: 'POST',
@@ -83,27 +93,35 @@ export const authApi = baseApi.injectEndpoints({
 
     verifyEmail: builder.mutation<void, { token: string }>({
       query: (body) => ({
-        url: '/auth/verify-email',
+        url: '/auth/email/verify',
         method: 'POST',
         body,
       }),
       invalidatesTags: ['CurrentUser'],
+    }),
+
+    resendEmailVerification: builder.mutation<void, void>({
+      query: () => ({
+        url: '/auth/email/resend',
+        method: 'POST',
+      }),
     }),
 
     verifyPhone: builder.mutation<void, { otp: string }>({
       query: (body) => ({
-        url: '/auth/verify-phone',
+        url: '/auth/phone/verify',
         method: 'POST',
         body,
       }),
       invalidatesTags: ['CurrentUser'],
     }),
 
-    enable2FA: builder.mutation<{ qrCodeUrl: string; secret: string }, void>({
+    enable2FA: builder.mutation<{ qrCodeUrl: string; qr_code_url?: string; secret: string }, void>({
       query: () => ({
         url: '/auth/2fa/enable',
         method: 'POST',
       }),
+      transformResponse: unwrapData,
     }),
 
     confirm2FA: builder.mutation<void, { code: string }>({
@@ -115,19 +133,21 @@ export const authApi = baseApi.injectEndpoints({
       invalidatesTags: ['CurrentUser'],
     }),
 
-    verify2FA: builder.mutation<LoginResponse, { code: string; email: string }>({
+    verify2FA: builder.mutation<LoginResponse, { code: string; email?: string; user_id?: number | string }>({
       query: (body) => ({
         url: '/auth/2fa/verify',
         method: 'POST',
         body,
       }),
+      transformResponse: unwrapData,
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
-          const { data } = await queryFulfilled;
+          const { data: payload } = await queryFulfilled;
           dispatch(
             setCredentials({
-              user: data.user,
-              accessToken: data.access_token,
+              user: payload.user,
+              accessToken: payload.access_token,
+              refreshToken: payload.refresh_token,
             }),
           );
         } catch {
@@ -156,17 +176,18 @@ export const authApi = baseApi.injectEndpoints({
 
     getKycStatus: builder.query<{ status: string; currentTier: number; nextTierRequirement: string }, void>({
       query: () => '/auth/kyc/status',
+      transformResponse: unwrapData,
       providesTags: ['CurrentUser'],
     }),
-    
+
     getCurrentUser: builder.query<AuthUser, void>({
       query: () => '/auth/me',
       providesTags: ['CurrentUser'],
+      transformResponse: unwrapData,
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
-          const { data } = await queryFulfilled;
-          // Just updates the user part
-          dispatch({ type: 'auth/setUser', payload: data });
+          const { data: payload } = await queryFulfilled;
+          dispatch({ type: 'auth/setUser', payload });
         } catch {
           dispatch(clearCredentials());
         }
@@ -181,6 +202,7 @@ export const {
   useLogoutMutation,
   useRefreshTokenMutation,
   useVerifyEmailMutation,
+  useResendEmailVerificationMutation,
   useVerifyPhoneMutation,
   useEnable2FAMutation,
   useConfirm2FAMutation,

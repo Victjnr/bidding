@@ -23,7 +23,8 @@ const API_BASE_URL =
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
   prepareHeaders: (headers, { getState }) => {
-    const token = (getState() as { auth: { accessToken: string | null } }).auth.accessToken;
+    const stateToken = (getState() as { auth: { accessToken: string | null } }).auth.accessToken;
+    const token = stateToken || localStorage.getItem('access_token');
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
@@ -31,6 +32,41 @@ const baseQuery = fetchBaseQuery({
     return headers;
   },
 });
+
+function normalizeEnvelope(result: any) {
+  if (
+    result?.data &&
+    typeof result.data === 'object' &&
+    !Array.isArray(result.data) &&
+    result.data.status === 'success' &&
+    'data' in result.data
+  ) {
+    const meta = result.data.meta;
+    const hasPagination =
+      meta &&
+      typeof meta === 'object' &&
+      !Array.isArray(meta) &&
+      ('currentPage' in meta || 'current_page' in meta || 'total' in meta);
+
+    if (hasPagination) {
+      result.data = {
+        data: result.data.data,
+        meta: {
+          currentPage: meta.currentPage ?? meta.current_page ?? 1,
+          lastPage: meta.lastPage ?? meta.last_page ?? 1,
+          perPage: meta.perPage ?? meta.per_page ?? 20,
+          total: meta.total ?? 0,
+          current_page: meta.current_page ?? meta.currentPage ?? 1,
+          last_page: meta.last_page ?? meta.lastPage ?? 1,
+          per_page: meta.per_page ?? meta.perPage ?? 20,
+        },
+      };
+    } else {
+      result.data = result.data.data;
+    }
+  }
+  return result;
+}
 
 const baseQueryWithReauth: BaseQueryFn<
   string | FetchArgs,
@@ -40,6 +76,11 @@ const baseQueryWithReauth: BaseQueryFn<
   let result = await baseQuery(args, api, extraOptions);
 
   if (result.error && result.error.status === 401) {
+    const reqUrl = typeof args === 'string' ? args : args.url;
+    if (reqUrl.includes('/auth/login') || reqUrl.includes('/auth/register') || reqUrl.includes('/auth/refresh')) {
+      return result;
+    }
+
     const refreshToken = localStorage.getItem('refresh_token');
 
     if (!refreshToken) {
@@ -58,9 +99,14 @@ const baseQueryWithReauth: BaseQueryFn<
       extraOptions,
     );
 
-    if (refreshResult.data) {
-      const { access_token } = refreshResult.data as { access_token: string };
-      api.dispatch(setAccessToken(access_token));
+    const refreshPayload = (refreshResult.data as any)?.data ?? refreshResult.data;
+    const newAccessToken = refreshPayload?.access_token ?? refreshPayload?.accessToken;
+
+    if (newAccessToken) {
+      if (refreshPayload?.refresh_token) {
+        localStorage.setItem('refresh_token', refreshPayload.refresh_token);
+      }
+      api.dispatch(setAccessToken(newAccessToken));
 
       // Retry original request with new token
       result = await baseQuery(args, api, extraOptions);
@@ -68,12 +114,10 @@ const baseQueryWithReauth: BaseQueryFn<
       localStorage.removeItem('refresh_token');
       api.dispatch(clearCredentials());
       api.dispatch({ type: 'api/resetApiState' });
-      // Removed window.location.href redirect to prevent infinite reload loops.
-      // React Router ProtectedRoute components will handle redirects.
     }
   }
 
-  return result;
+  return normalizeEnvelope(result);
 };
 
 /**

@@ -50,7 +50,7 @@ const HOW_IT_WORKS = [
   {
     icon: <Users className="h-7 w-7" />,
     title: 'Create Account',
-    description: 'Sign up in seconds with email verification and optional KYC for premium features.',
+    description: 'Sign up in seconds with email verification and start bidding immediately.',
   },
   {
     icon: <Gavel className="h-7 w-7" />,
@@ -59,8 +59,8 @@ const HOW_IT_WORKS = [
   },
   {
     icon: <Award className="h-7 w-7" />,
-    title: 'Win & Pay Securely',
-    description: 'Win auctions and complete transactions through our secure escrow payment system.',
+    title: 'Win & Pay',
+    description: 'Win auctions and complete secure transactions with verified buyers and sellers.',
   },
 ];
 
@@ -165,13 +165,13 @@ export default function LandingPage() {
             className="mt-12 flex flex-wrap items-center justify-center gap-6 text-sm text-white/40"
           >
             <span className="flex items-center gap-1.5">
-              <Shield className="h-4 w-4 text-green-400" /> Secure Escrow Payments
+              <Shield className="h-4 w-4 text-green-400" /> Secure Payments
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle className="h-4 w-4 text-green-400" /> KYC-Verified Sellers
+              <CheckCircle className="h-4 w-4 text-green-400" /> Verified Sellers
             </span>
             <span className="flex items-center gap-1.5">
-              <Zap className="h-4 w-4 text-orange" /> Real-Time WebSocket Bids
+              <Zap className="h-4 w-4 text-orange" /> Real-Time Bids
             </span>
           </motion.div>
         </div>
@@ -332,11 +332,11 @@ export default function LandingPage() {
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              { icon: <Zap />, title: 'Real-Time Bidding', desc: 'WebSocket-powered live updates — see bids the instant they happen with zero refresh.' },
-              { icon: <Shield />, title: 'Secure Payments', desc: 'Escrow-protected transactions with Stripe integration ensure both buyer and seller safety.' },
+              { icon: <Zap />, title: 'Real-Time Bidding', desc: 'Live updates powered by WebSocket — see bids the instant they happen.' },
+              { icon: <Shield />, title: 'Secure Transactions', desc: 'Safe, transparent bidding with verified buyer and seller profiles.' },
               { icon: <TrendingUp />, title: 'Smart Analytics', desc: 'Sellers get detailed dashboards with bid analytics, conversion rates, and revenue tracking.' },
               { icon: <Clock />, title: 'Anti-Snipe Protection', desc: 'Automatic bid extension prevents last-second sniping and ensures fair auction outcomes.' },
-              { icon: <Users />, title: 'Verified Community', desc: 'Multi-tier KYC verification builds trust. Verified sellers get priority placement and higher limits.' },
+              { icon: <Users />, title: 'Trusted Community', desc: 'Connect with verified members committed to fair, transparent auctions.' },
               { icon: <Award />, title: 'Seller Tools', desc: 'Professional listing wizard, bulk uploads, scheduled auctions, and reserve price management.' },
             ].map((feature, i) => (
               <motion.div

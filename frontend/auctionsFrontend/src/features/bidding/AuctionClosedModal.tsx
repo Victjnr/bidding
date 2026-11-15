@@ -1,21 +1,25 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, ArrowRight, XCircle } from 'lucide-react';
 import type { AuctionClosedEvent } from '@/types/bid';
+import type { AuctionResource } from '@/types/auction';
 import { useAppSelector } from '@/hooks/useRedux';
 import { selectCurrentUser } from '@/store/slices/authSlice';
 import { useNavigate } from 'react-router-dom';
+import { PaymentModal } from '@/features/payments/PaymentModal';
 
 interface AuctionClosedModalProps {
   isOpen: boolean;
   eventData: AuctionClosedEvent | null;
   currency: string;
+  auction?: AuctionResource;
 }
 
-export function AuctionClosedModal({ isOpen, eventData, currency }: AuctionClosedModalProps) {
+export function AuctionClosedModal({ isOpen, eventData, currency, auction }: AuctionClosedModalProps) {
   const user = useAppSelector(selectCurrentUser);
   const navigate = useNavigate();
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (isOpen && eventData && user && eventData.winnerId === user.uuid) {
@@ -44,6 +48,17 @@ export function AuctionClosedModal({ isOpen, eventData, currency }: AuctionClose
   if (!isOpen || !eventData) return null;
 
   const isWinner = user && eventData.winnerId === user.uuid;
+
+  if (showPaymentModal && auction) {
+    return (
+      <PaymentModal
+        isOpen={true}
+        onClose={() => setShowPaymentModal(false)}
+        auction={auction}
+        finalPrice={eventData.finalPrice || auction.currentPrice}
+      />
+    );
+  }
 
   return (
     <AnimatePresence>
@@ -79,7 +94,7 @@ export function AuctionClosedModal({ isOpen, eventData, currency }: AuctionClose
                 The item is yours. Proceed to payment to complete your purchase and arrange delivery.
               </p>
               <button
-                onClick={() => navigate('/app/checkout/test')}
+                onClick={() => (auction ? setShowPaymentModal(true) : navigate('/app/bids'))}
                 className="btn-primary w-full text-lg py-4 shadow-orange/30 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all"
               >
                 Proceed to Payment

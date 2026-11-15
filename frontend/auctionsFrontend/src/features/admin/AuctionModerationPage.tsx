@@ -4,6 +4,7 @@ import { Check, X, MessageSquare, DollarSign, Tag, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import * as Dialog from '@radix-ui/react-dialog';
+import toast from 'react-hot-toast';
 
 const TABS = ['pending', 'active', 'flagged', 'ended'] as const;
 
@@ -24,18 +25,37 @@ export default function AuctionModerationPage() {
   const [changesTarget, setChangesTarget] = useState<string | null>(null);
   const [changesNotes, setChangesNotes] = useState('');
 
+  const handleApprove = async (uuid: string) => {
+    try {
+      await approveAuction(uuid).unwrap();
+      toast.success('Auction approved and published live!');
+    } catch {
+      toast.error('Failed to approve auction.');
+    }
+  };
+
   const handleReject = async () => {
     if (!rejectTarget) return;
-    await rejectAuction({ uuid: rejectTarget, reason: `${rejectReason}: ${rejectNotes}` }).unwrap();
-    setRejectTarget(null);
-    setRejectNotes('');
+    try {
+      await rejectAuction({ uuid: rejectTarget, reason: `${rejectReason}: ${rejectNotes}` }).unwrap();
+      toast.success('Auction rejected.');
+      setRejectTarget(null);
+      setRejectNotes('');
+    } catch {
+      toast.error('Failed to reject auction.');
+    }
   };
 
   const handleRequestChanges = async () => {
     if (!changesTarget) return;
-    await requestChanges({ uuid: changesTarget, notes: changesNotes }).unwrap();
-    setChangesTarget(null);
-    setChangesNotes('');
+    try {
+      await requestChanges({ uuid: changesTarget, notes: changesNotes }).unwrap();
+      toast.success('Changes requested from seller.');
+      setChangesTarget(null);
+      setChangesNotes('');
+    } catch {
+      toast.error('Failed to request changes.');
+    }
   };
 
   return (
@@ -106,7 +126,7 @@ export default function AuctionModerationPage() {
               {activeTab === 'pending' && (
                 <div className="border-t border-white/5 p-4 flex gap-2">
                   <button
-                    onClick={() => approveAuction(auction.uuid)}
+                    onClick={() => handleApprove(auction.uuid)}
                     disabled={isApproving}
                     className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/10 py-2 text-xs font-bold text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                   >

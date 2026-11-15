@@ -12,6 +12,7 @@ export const accountApi = baseApi.injectEndpoints({
     // Addresses
     getAddresses: builder.query<AddressResource[], void>({
       query: () => '/account/addresses',
+      transformResponse: (response: any) => (Array.isArray(response) ? response : response?.data ?? []),
       providesTags: ['Address'],
     }),
     addAddress: builder.mutation<AddressResource, Omit<AddressResource, 'id' | 'uuid' | 'createdAt'>>({
@@ -51,6 +52,7 @@ export const accountApi = baseApi.injectEndpoints({
     }),
     getSessions: builder.query<SecuritySession[], void>({
       query: () => '/account/security/sessions',
+      transformResponse: (response: any) => (Array.isArray(response) ? response : response?.data ?? []),
       providesTags: ['Session'],
     }),
     revokeSession: builder.mutation<void, string>({
@@ -59,6 +61,7 @@ export const accountApi = baseApi.injectEndpoints({
     }),
     getLoginHistory: builder.query<LoginHistoryEntry[], void>({
       query: () => '/account/security/login-history',
+      transformResponse: (response: any) => (Array.isArray(response) ? response : response?.data ?? []),
     }),
 
     // Bids & Watchlist

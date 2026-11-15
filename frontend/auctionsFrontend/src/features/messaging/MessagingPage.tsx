@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Send, ArrowLeft, MessageSquare } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js';
+import { getEcho } from '@/lib/echo';
 import { useGetConversationsQuery, useGetMessagesQuery, useSendMessageMutation, useMarkConversationReadMutation } from '@/store/api/messagingApi';
 import { useAppSelector, useAppDispatch } from '@/hooks/useRedux';
 import { selectCurrentUser } from '@/store/slices/authSlice';
@@ -11,13 +11,17 @@ import { messagingApi } from '@/store/api/messagingApi';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types';
 
-if (typeof window !== 'undefined') {
-  (window as any).Pusher = Pusher;
-}
-
 export default function MessagingPage() {
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [mobileShowThread, setMobileShowThread] = useState(false);
+  const { conversationId: routeConversationId } = useParams<{ conversationId?: string }>();
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(routeConversationId ?? null);
+  const [mobileShowThread, setMobileShowThread] = useState(Boolean(routeConversationId));
+
+  useEffect(() => {
+    if (routeConversationId) {
+      setActiveConversationId(routeConversationId);
+      setMobileShowThread(true);
+    }
+  }, [routeConversationId]);
 
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
@@ -205,21 +209,12 @@ function MessageThread({
 
   // Real-time: subscribe to conversation channel
   useEffect(() => {
-    const echo = new Echo({
-      broadcaster: 'pusher',
-      key: import.meta.env.VITE_PUSHER_APP_KEY || 'app-key',
-      cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER || 'mt1',
-      forceTLS: true,
-      authEndpoint: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/broadcasting/auth`,
-      auth: {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      },
-    });
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
 
-    echo.private(`conversation.${conversationId}`).listen('.NewMessage', (msg: Message) => {
-      // Optimistically add to cache
+    const echo = getEcho();
+
+    const handleNewMsg = (msg: Message) => {
       dispatch(
         messagingApi.util.updateQueryData('getMessages', { conversationId, page: 1 }, (draft) => {
           const exists = draft.data.find((m) => m.id === msg.id);
@@ -228,11 +223,14 @@ function MessageThread({
           }
         }),
       );
-    });
+    };
+
+    const channel = echo.private(`conversation.${conversationId}`);
+    channel.listen('.NewMessage', handleNewMsg);
+    channel.listen('.message.sent', handleNewMsg);
 
     return () => {
       echo.leave(`conversation.${conversationId}`);
-      echo.disconnect();
     };
   }, [conversationId, dispatch, page]);
 

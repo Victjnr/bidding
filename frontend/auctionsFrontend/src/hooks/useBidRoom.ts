@@ -1,20 +1,14 @@
 import { useEffect, useState } from 'react';
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js';
 import { useAppDispatch } from '@/hooks/useRedux';
 import { auctionApi } from '@/store/api/auctionApi';
-import type { BidPlacedEvent, AuctionExtendedEvent, AuctionClosedEvent, BidResource } from '@/types/bid';
+import type { AuctionClosedEvent, BidResource } from '@/types/bid';
 import { useGetAuctionQuery } from '@/store/api/auctionApi';
-
-// Set up Pusher globally if not already set. In a real app this might be in a separate config file.
-if (typeof window !== 'undefined') {
-  (window as any).Pusher = Pusher;
-}
+import { getEcho } from '@/lib/echo';
 
 export function useBidRoom(auctionUuid: string) {
   const dispatch = useAppDispatch();
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('disconnected');
-  
+
   // Local state overrides for optimistic/real-time updates
   const [isEnded, setIsEnded] = useState(false);
   const [winnerData, setWinnerData] = useState<AuctionClosedEvent | null>(null);
@@ -25,20 +19,11 @@ export function useBidRoom(auctionUuid: string) {
   useEffect(() => {
     if (!auctionUuid) return;
 
-    // We assume Echo is configured via environment variables.
-    // Replace these with your actual Laravel Echo Pusher configuration.
-    const echo = new Echo({
-      broadcaster: 'pusher',
-      key: import.meta.env.VITE_PUSHER_APP_KEY || 'app-key',
-      cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER || 'mt1',
-      forceTLS: true,
-      authEndpoint: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/broadcasting/auth`,
-      auth: {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`, // or from redux state
-        },
-      },
-    });
+    const echo = getEcho();
+    if (!echo) {
+      setConnectionStatus('disconnected');
+      return;
+    }
 
     setConnectionStatus('connecting');
     const channel = echo.private(`auction.${auctionUuid}`);
@@ -51,63 +36,84 @@ export function useBidRoom(auctionUuid: string) {
       setConnectionStatus('error');
     });
 
-    // ─── Event Handlers ───
-    channel.listen('.BidPlacedEvent', (event: BidPlacedEvent) => {
-      // Optimistically update the RTK Query cache for this auction's bids
+    const handleBidPlaced = (event: any) => {
+      const bidId = String(event.bidId ?? event.bid_uuid ?? Date.now());
+      const amount = Number(event.amount ?? event.currentPrice ?? event.current_price ?? 0);
+      const bidderAlias = event.bidderAlias ?? event.bidder_alias ?? 'Bidder';
+      const currentPrice = Number(event.currentPrice ?? event.current_price ?? amount);
+      const totalBids = Number(event.totalBids ?? event.total_bids ?? 1);
+      const isReserveMet = Boolean(event.isReserveMet ?? event.is_reserve_met ?? false);
+
       dispatch(
         auctionApi.util.updateQueryData('getBids', auctionUuid, (draftBids) => {
-          // Check if bid already exists
-          const exists = draftBids.find((b) => b.id.toString() === event.bidId);
+          const exists = draftBids.find((b) => String(b.uuid) === bidId || String(b.id) === bidId);
           if (!exists) {
             const newBid: BidResource = {
-              id: Number(event.bidId),
-              uuid: event.bidId,
+              id: Number(event.id) || Date.now(),
+              uuid: bidId,
               auctionId: auctionUuid,
-              amount: event.amount,
-              type: 'manual', // Simplification, backend would send type ideally
-              bidderAlias: event.bidderAlias,
-              isWinning: true, // Optimistically winning
-              createdAt: new Date().toISOString(),
+              amount,
+              type: event.type ?? 'manual',
+              bidderAlias,
+              isWinning: true,
+              createdAt: event.timestamp ?? new Date().toISOString(),
             };
-            // Mark all others as non-winning
             draftBids.forEach((b) => (b.isWinning = false));
             draftBids.unshift(newBid);
           }
         })
       );
 
-      // Optimistically update the auction resource cache
       dispatch(
         auctionApi.util.updateQueryData('getAuction', auctionUuid, (draft) => {
-          draft.currentPrice = event.currentPrice;
-          draft.totalBids = event.totalBids;
-          draft.isReserveMet = event.isReserveMet;
+          draft.currentPrice = currentPrice;
+          draft.totalBids = totalBids;
+          draft.isReserveMet = isReserveMet;
         })
       );
-    });
+    };
 
-    channel.listen('.AuctionExtendedEvent', (event: AuctionExtendedEvent) => {
-      dispatch(
-        auctionApi.util.updateQueryData('getAuction', auctionUuid, (draft) => {
-          draft.endAt = event.newEndAt;
-        })
-      );
-    });
+    const handleAuctionExtended = (event: any) => {
+      const newEndAt = event.newEndAt ?? event.new_end_at;
+      if (newEndAt) {
+        dispatch(
+          auctionApi.util.updateQueryData('getAuction', auctionUuid, (draft) => {
+            draft.endAt = newEndAt;
+          })
+        );
+      }
+    };
 
-    channel.listen('.AuctionClosedEvent', (event: AuctionClosedEvent) => {
+    const handleAuctionClosed = (event: any) => {
       setIsEnded(true);
-      setWinnerData(event);
+      setWinnerData({
+        auctionId: event.auctionId ?? event.auction_uuid ?? auctionUuid,
+        winnerId: event.winnerId ?? event.winner_uuid ?? null,
+        winnerAlias: event.winnerAlias ?? event.winner_alias ?? null,
+        finalPrice: Number(event.finalPrice ?? event.final_price ?? 0),
+        isReserveMet: Boolean(event.isReserveMet ?? event.is_reserve_met ?? true),
+      });
       dispatch(
         auctionApi.util.updateQueryData('getAuction', auctionUuid, (draft) => {
           draft.status = 'sold';
-          draft.isReserveMet = event.isReserveMet;
+          draft.isReserveMet = Boolean(event.isReserveMet ?? event.is_reserve_met ?? draft.isReserveMet);
         })
       );
-    });
+    };
+
+    channel.listen('.bid.placed', handleBidPlaced);
+    channel.listen('.BidPlacedEvent', handleBidPlaced);
+    channel.listen('.auction.extended', handleAuctionExtended);
+    channel.listen('.AuctionExtendedEvent', handleAuctionExtended);
+    channel.listen('.auction.closed', handleAuctionClosed);
+    channel.listen('.AuctionClosedEvent', handleAuctionClosed);
 
     return () => {
-      echo.leave(`auction.${auctionUuid}`);
-      echo.disconnect();
+      try {
+        echo.leave(`auction.${auctionUuid}`);
+      } catch {
+        // ignore
+      }
       setConnectionStatus('disconnected');
     };
   }, [auctionUuid, dispatch]);

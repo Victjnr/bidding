@@ -2,7 +2,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Bold, Italic, List, ListOrdered, Heading2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useGetCategoriesQuery } from '@/store/api/auctionApi';
+import { useGetDropdownOptionsQuery } from '@/store/api/auctionApi';
 
 interface ItemDetailsProps {
   title: string;
@@ -19,18 +19,10 @@ interface ItemDetailsProps {
   }>) => void;
 }
 
-const CONDITIONS = [
-  { value: 'new', label: 'New' },
-  { value: 'used_like_new', label: 'Used — Like New' },
-  { value: 'used_good', label: 'Used — Good' },
-  { value: 'used_fair', label: 'Used — Fair' },
-  { value: 'refurbished', label: 'Refurbished' },
-  { value: 'parts_only', label: 'For Parts Only' },
-];
-
 export function ItemDetails({ title, description, category, condition, location, onChange }: ItemDetailsProps) {
-  const { data: categoryData, isLoading: categoriesLoading } = useGetCategoriesQuery();
-  const dynamicCategories = categoryData?.data || [];
+  const { data: optionsData, isLoading } = useGetDropdownOptionsQuery();
+  const dynamicCategories = optionsData?.data?.categories || [];
+  const dynamicConditions = optionsData?.data?.conditions || [];
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -120,6 +112,9 @@ export function ItemDetails({ title, description, category, condition, location,
             </div>
           )}
           <EditorContent editor={editor} />
+        </div>
+      </div>
+
       {/* Category */}
       <div className="space-y-1.5">
         <label htmlFor="auction-category" className="text-sm font-medium text-ink">
@@ -153,7 +148,7 @@ export function ItemDetails({ title, description, category, condition, location,
             className="input"
           >
             <option value="">Select condition</option>
-            {CONDITIONS.map((c) => (
+            {dynamicConditions.map((c: any) => (
               <option key={c.value} value={c.value}>
                 {c.label}
               </option>
@@ -164,7 +159,7 @@ export function ItemDetails({ title, description, category, condition, location,
         {/* Location */}
         <div className="space-y-1.5">
           <label htmlFor="auction-location" className="text-sm font-medium text-ink">
-            Item Location
+            Item Location <span className="text-error">*</span>
           </label>
           <input
             id="auction-location"

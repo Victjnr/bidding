@@ -34,6 +34,7 @@ export interface AuctionExtendedEvent {
 }
 
 export interface AuctionClosedEvent {
+  auctionId?: string;
   winnerId: string | null;
   winnerAlias: string | null;
   finalPrice: number | null;

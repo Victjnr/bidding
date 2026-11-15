@@ -51,6 +51,11 @@ export interface AuctionResource {
 export interface AuctionFilters {
   page?: number;
   limit?: number;
+  perPage?: number;
+  per_page?: number;
+  status?: string;
+  'filter[status]'?: string;
+  'filter[category_id]'?: string | number;
   category?: string;
   type?: AuctionType[];
   minPrice?: number;
@@ -68,5 +73,8 @@ export interface PaginatedResponse<T> {
     lastPage: number;
     perPage: number;
     total: number;
+    current_page?: number;
+    last_page?: number;
+    per_page?: number;
   };
 }

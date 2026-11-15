@@ -16,6 +16,7 @@ export const paymentApi = baseApi.injectEndpoints({
     listPaymentMethods: builder.query<PaymentMethodResource[], void>({
       query: () => '/payments/methods',
       providesTags: ['PaymentMethod'],
+      transformResponse: (response: any) => (Array.isArray(response) ? response : response?.data ?? []),
     }),
 
     attachPaymentMethod: builder.mutation<PaymentMethodResource, Partial<PaymentMethodResource>>({
@@ -47,8 +48,8 @@ export const paymentApi = baseApi.injectEndpoints({
     checkPaymentStatus: builder.query<PaynowStatusResponse, string>({
       query: (pollUrl) => ({
         url: `/payments/status`,
-        method: 'POST',
-        body: { pollUrl }, // Pass the poll URL to backend to check status securely
+        method: 'GET',
+        params: { pollUrl },
       }),
     }),
 

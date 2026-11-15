@@ -38,7 +38,7 @@ export function BidPanel({ auction }: { auction: AuctionResource }) {
   const handlePlaceBid = async () => {
     setErrorMsg('');
     const amount = Number(bidAmount);
-    
+
     if (isNaN(amount) || amount < room.nextMinBid) {
       setErrorMsg(`Bid must be at least ${auction.currency} ${room.nextMinBid.toLocaleString()}`);
       return;
@@ -69,7 +69,12 @@ export function BidPanel({ auction }: { auction: AuctionResource }) {
 
   return (
     <>
-      <AuctionClosedModal isOpen={room.isEnded} eventData={room.winnerData} currency={auction.currency} />
+      <AuctionClosedModal
+        isOpen={room.isEnded}
+        eventData={room.winnerData}
+        currency={auction.currency}
+        auction={auction}
+      />
 
       <div className="rounded-xl border border-border bg-white shadow-elevated overflow-hidden">
         {/* Header / Countdown */}
@@ -119,7 +124,7 @@ export function BidPanel({ auction }: { auction: AuctionResource }) {
             >
               {auction.currency} {room.currentPrice.toLocaleString()}
             </motion.div>
-            
+
             <div className="mt-2 flex items-center justify-center gap-1.5">
               {room.isReserveMet ? (
                 <span className="flex items-center gap-1 text-xs font-medium text-success">
@@ -175,14 +180,12 @@ export function BidPanel({ auction }: { auction: AuctionResource }) {
                 type="button"
                 onClick={() => setIsProxyEnabled(!isProxyEnabled)}
                 disabled={isDisabled}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${
-                  isProxyEnabled ? 'bg-orange' : 'bg-border'
-                }`}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${isProxyEnabled ? 'bg-orange' : 'bg-border'
+                  }`}
               >
                 <span
-                  className={`pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-                    isProxyEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
+                  className={`pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${isProxyEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
                 />
               </button>
               <span className="text-sm font-medium text-ink">Enable Auto-Bid (Proxy)</span>
@@ -238,7 +241,7 @@ export function BidPanel({ auction }: { auction: AuctionResource }) {
                 </span>
               )}
             </button>
-            
+
             {!isAuthenticated && (
               <p className="text-center text-xs font-medium text-error mt-2">
                 You must log in to place a bid.

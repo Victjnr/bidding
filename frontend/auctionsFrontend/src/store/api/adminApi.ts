@@ -51,12 +51,17 @@ export const adminApi = baseApi.injectEndpoints({
 
     suspendUser: builder.mutation<void, string>({
       query: (uuid) => ({ url: `/admin/users/${uuid}/suspend`, method: 'POST' }),
-      invalidatesTags: ['AdminUser'],
+      invalidatesTags: ['AdminUser', 'AuditLog'],
     }),
 
     banUser: builder.mutation<void, string>({
       query: (uuid) => ({ url: `/admin/users/${uuid}/ban`, method: 'POST' }),
-      invalidatesTags: ['AdminUser'],
+      invalidatesTags: ['AdminUser', 'AuditLog'],
+    }),
+
+    activateUser: builder.mutation<void, string>({
+      query: (uuid) => ({ url: `/admin/users/${uuid}/activate`, method: 'POST' }),
+      invalidatesTags: ['AdminUser', 'AuditLog'],
     }),
 
     /* ─── KYC ─── */
@@ -134,6 +139,7 @@ export const {
   useGetAdminUserDetailQuery,
   useSuspendUserMutation,
   useBanUserMutation,
+  useActivateUserMutation,
   useGetKycQueueQuery,
   useApproveKycMutation,
   useRejectKycMutation,

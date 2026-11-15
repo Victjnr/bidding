@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Gavel, Trophy, CreditCard, AlertCircle, Info, CheckCheck } from 'lucide-react';
+import { Bell, Gavel, Trophy, CreditCard, AlertCircle, Info, CheckCheck, MessageSquare } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from '@/hooks/useRedux';

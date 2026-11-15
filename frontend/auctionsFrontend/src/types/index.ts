@@ -4,6 +4,9 @@
 
 // ─── User & Auth ───────────────────────────────────
 
+import type { AuthUser } from './auth';
+import type { AuctionResource, AuctionStatus } from './auction';
+
 export * from './auth';
 export * from './auction';
 export * from './bid';
@@ -12,7 +15,11 @@ export * from './notification';
 export * from './search';
 export * from './seller';
 export * from './admin';
-export * from './account';
+export type {
+  AddressResource,
+  SecuritySession,
+  UserProfileUpdate,
+} from './account';
 
 
 
@@ -97,11 +104,15 @@ export interface Payout {
 export type NotificationType =
   | 'bid_placed'
   | 'bid_outbid'
+  | 'outbid'
   | 'auction_won'
+  | 'auction_ended'
   | 'auction_ending_soon'
   | 'auction_started'
   | 'payment_received'
   | 'payment_failed'
+  | 'dispute_opened'
+  | 'dispute_resolved'
   | 'kyc_approved'
   | 'kyc_rejected'
   | 'message_received'
@@ -158,36 +169,11 @@ export interface WatchlistItem {
   created_at: string;
 }
 
-// ─── Admin ─────────────────────────────────────────
-
-export interface AdminDashboardStats {
-  total_users: number;
-  total_auctions: number;
-  active_auctions: number;
-  total_bids: number;
-  total_revenue: number;
-  pending_kyc: number;
-  flagged_auctions: number;
-}
-
 // ─── WebSocket Events ──────────────────────────────
-
-export interface BidPlacedEvent {
-  bid: Bid;
-  auction_id: string;
-  new_price: number;
-  total_bids: number;
-}
 
 export interface AuctionEndedEvent {
   auction_id: string;
   winner_id: string | null;
   final_price: number;
   status: AuctionStatus;
-}
-
-export interface AuctionExtendedEvent {
-  auction_id: string;
-  extended_until: string;
-  reason: 'anti_snipe';
 }

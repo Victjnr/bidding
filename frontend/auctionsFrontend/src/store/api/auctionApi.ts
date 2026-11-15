@@ -13,9 +13,9 @@ export const auctionApi = baseApi.injectEndpoints({
       providesTags: (result) =>
         result
           ? [
-              ...result.data.map(({ uuid }) => ({ type: 'Auction' as const, id: uuid })),
-              { type: 'Auction', id: 'LIST' },
-            ]
+            ...result.data.map(({ uuid }) => ({ type: 'Auction' as const, id: uuid })),
+            { type: 'Auction', id: 'LIST' },
+          ]
           : [{ type: 'Auction', id: 'LIST' }],
     }),
 
@@ -26,10 +26,17 @@ export const auctionApi = baseApi.injectEndpoints({
 
     getCategories: builder.query<{ data: any[] }, void>({
       query: () => '/categories',
+      transformResponse: (res: any) => (Array.isArray(res) ? { data: res } : res?.data ? res : { data: [] }),
+    }),
+
+    getDropdownOptions: builder.query<{ data: { conditions: any[], currencies: any[], auctionTypes: any[], categories: any[] } }, void>({
+      query: () => '/settings/dropdown-options',
+      transformResponse: (res: any) => (res?.data ? res : { data: res }),
     }),
 
     getLandingStats: builder.query<{ data: { active_auctions: number, registered_bidders: number, bids_today: number } }, void>({
       query: () => '/stats/landing',
+      transformResponse: (res: any) => (res?.data ? res : { data: res }),
     }),
 
     createAuction: builder.mutation<AuctionResource, Partial<AuctionResource>>({
@@ -78,22 +85,34 @@ export const auctionApi = baseApi.injectEndpoints({
       invalidatesTags: (result, error, uuid) => [{ type: 'Auction', id: uuid }, { type: 'Auction', id: 'LIST' }],
     }),
 
+    toggleWatchlist: builder.mutation<{ isWatched: boolean; watchersCount: number }, string>({
+      query: (uuid) => ({
+        url: `/auctions/${uuid}/watch`,
+        method: 'POST',
+      }),
+      invalidatesTags: (result, error, uuid) => [{ type: 'Auction', id: uuid }, 'Watchlist'],
+    }),
+
     // ─── Bidding ─────────────────────────────────────
-    
+
     getBids: builder.query<BidResource[], string>({
       query: (auctionUuid) => `/auctions/${auctionUuid}/bids`,
+      transformResponse: (res: any) => (Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []),
       providesTags: (result, error, uuid) => [{ type: 'Bid', id: `AuctionList-${uuid}` }],
     }),
-    
+
     placeBid: builder.mutation<BidResource, { auctionUuid: string; amount: number }>({
       query: ({ auctionUuid, amount }) => ({
         url: `/auctions/${auctionUuid}/bids`,
         method: 'POST',
         body: { amount },
       }),
-      invalidatesTags: (result, error, { auctionUuid }) => [{ type: 'Bid', id: `AuctionList-${auctionUuid}` }],
+      invalidatesTags: (result, error, { auctionUuid }) => [
+        { type: 'Bid', id: `AuctionList-${auctionUuid}` },
+        { type: 'Auction', id: auctionUuid },
+      ],
     }),
-    
+
     placeProxyBid: builder.mutation<ProxyBidResource, { auctionUuid: string; maxAmount: number }>({
       query: ({ auctionUuid, maxAmount }) => ({
         url: `/auctions/${auctionUuid}/proxy-bids`,
@@ -101,14 +120,14 @@ export const auctionApi = baseApi.injectEndpoints({
         body: { maxAmount },
       }),
     }),
-    
+
     getProxyBid: builder.query<ProxyBidResource | null, string>({
       query: (auctionUuid) => `/auctions/${auctionUuid}/proxy-bids/current`,
     }),
-    
+
     cancelProxyBid: builder.mutation<void, string>({
       query: (auctionUuid) => ({
-        url: `/auctions/${auctionUuid}/proxy-bids/current`,
+        url: `/auctions/${auctionUuid}/proxy-bids`,
         method: 'DELETE',
       }),
     }),
@@ -119,12 +138,14 @@ export const {
   useListAuctionsQuery,
   useGetAuctionQuery,
   useGetCategoriesQuery,
+  useGetDropdownOptionsQuery,
   useGetLandingStatsQuery,
   useCreateAuctionMutation,
   useUpdateAuctionMutation,
   useUploadMediaMutation,
   useDeleteMediaMutation,
   useSubmitForReviewMutation,
+  useToggleWatchlistMutation,
   useGetBidsQuery,
   usePlaceBidMutation,
   usePlaceProxyBidMutation,
